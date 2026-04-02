@@ -3,6 +3,11 @@ const { Client, GatewayIntentBits, Partials, ActionRowBuilder, ButtonBuilder, Bu
 const Canvas = require('canvas');
 const fetch = require('node-fetch');
 const sharp = require('sharp');
+const { registerFont } = require('canvas');
+const path = require('path');
+
+// Register the Noto Sans font
+registerFont(path.join(__dirname, 'NotoSans-Regular.ttf'), { family: 'NotoSans' });
 
 const client = new Client({
     intents: [
@@ -20,37 +25,27 @@ client.once('clientReady', () => {
 
 const GOLDEN_RATIO = 1.618;
 
-// -------------------------
-// Aggressive sanitize function (nickname/username only)
-// -------------------------
+// Sanitize fancy Unicode letters to standard ones if missing in font
 function sanitizeText(text) {
-    let sanitized = text.normalize('NFKD');
-    sanitized = sanitized.replace(/([^\p{Emoji}\u0000-\u007F])/gu, match => {
-        const charMap = {
-            '𝔸':'A','𝔹':'B','ℂ':'C','𝔻':'D','𝔼':'E','𝔽':'F','𝔾':'G',
-            'ℍ':'H','𝕀':'I','𝕁':'J','𝕂':'K','𝕃':'L','𝕄':'M','ℕ':'N',
-            '𝕆':'O','ℙ':'P','ℚ':'Q','ℝ':'R','𝕊':'S','𝕋':'T','𝕌':'U',
-            '𝕍':'V','𝕎':'W','𝕏':'X','𝕐':'Y','ℤ':'Z',
-            '𝕒':'a','𝕓':'b','𝕔':'c','𝕕':'d','𝕖':'e','𝕗':'f','𝕘':'g',
-            '𝕙':'h','𝕚':'i','𝕛':'j','𝕜':'k','𝕝':'l','𝕞':'m','𝕟':'n',
-            '𝕠':'o','𝕡':'p','𝕢':'q','𝕣':'r','𝕤':'s','𝕥':'t','𝕦':'u',
-            '𝕧':'v','𝕨':'w','𝕩':'x','𝕪':'y','𝕫':'z',
-            '𝟘':'0','𝟙':'1','𝟚':'2','𝟛':'3','𝟜':'4','𝟝':'5','𝟞':'6','𝟟':'7','𝟠':'8','𝟡':'9'
-        };
-        return charMap[match] || '?';
-    });
-    return sanitized;
+    const charMap = {
+        '𝔸':'A','𝔹':'B','ℂ':'C','𝔻':'D','𝔼':'E','𝔽':'F','𝔾':'G',
+        'ℍ':'H','𝕀':'I','𝕁':'J','𝕂':'K','𝕃':'L','𝕄':'M','ℕ':'N',
+        '𝕆':'O','ℙ':'P','ℚ':'Q','ℝ':'R','𝕊':'S','𝕋':'T','𝕌':'U',
+        '𝕍':'V','𝕎':'W','𝕏':'X','𝕐':'Y','ℤ':'Z',
+        '𝕒':'a','𝕓':'b','𝕔':'c','𝕕':'d','𝕖':'e','𝕗':'f','𝕘':'g',
+        '𝕙':'h','𝕚':'i','𝕛':'j','𝕜':'k','𝕝':'l','𝕞':'m','𝕟':'n',
+        '𝕠':'o','𝕡':'p','𝕢':'q','𝕣':'r','𝕤':'s','𝕥':'t','𝕦':'u',
+        '𝕧':'v','𝕨':'w','𝕩':'x','𝕪':'y','𝕫':'z'
+    };
+    return text.split('').map(c => charMap[c] || c).join('');
 }
 
-// -------------------------
-// Wrap quote text using golden ratio
-// -------------------------
 function wrapTextGolden(ctx, text, maxWidth, maxHeight, maxFontSize) {
     let fontSize = maxFontSize;
     let lines = [];
 
     while (fontSize > 10) {
-        ctx.font = `${fontSize}px "Arial Unicode MS", "Noto Sans Symbols", "Noto Sans", Sans`;
+        ctx.font = `${fontSize}px "NotoSans"`;
         let words = text.split(' ').flatMap(word => {
             if (ctx.measureText(word).width > maxWidth) {
                 return word.match(/.{1,12}/g) || [word];
@@ -79,9 +74,6 @@ function wrapTextGolden(ctx, text, maxWidth, maxHeight, maxFontSize) {
     return { lines, fontSize };
 }
 
-// -------------------------
-// Get top reaction message from a user
-// -------------------------
 async function getTopReactionMessage(channel, userId) {
     const messages = await channel.messages.fetch({ limit: 100 });
     let top = null;
@@ -99,9 +91,6 @@ async function getTopReactionMessage(channel, userId) {
     return top;
 }
 
-// -------------------------
-// Extract URLs for emoji buttons
-// -------------------------
 function extractURLs(text) {
     const urls = [];
     const raw = text.match(/https?:\/\/[^\s\)]+/gi) || [];
@@ -111,20 +100,17 @@ function extractURLs(text) {
     return urls;
 }
 
-// -------------------------
-// Generate quote image
-// -------------------------
 async function generateQuoteImage(text, username, avatarURL, serverName, nickname) {
     const width = 1000;
     const height = 400;
     const canvas = Canvas.createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
-    // Black background
+    // Black background right side
     ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, width, height);
 
-    // Avatar
+    // Avatar left side
     const response = await fetch(avatarURL);
     const avatarBuffer = await response.buffer();
     const pngBuffer = await sharp(avatarBuffer).png().toBuffer();
@@ -146,37 +132,33 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     const metaHeight = 100;
     let quoteY = blackY + (blackHeight - totalTextHeight - metaHeight) / 2;
 
-    // Draw quote text
     ctx.fillStyle = '#ffffff';
     ctx.textBaseline = 'top';
     lines.forEach(line => {
-        ctx.font = `${fontSize}px "Arial Unicode MS", "Noto Sans Symbols", "Noto Sans", Sans`;
+        ctx.font = `${fontSize}px "NotoSans"`;
         const textWidth = ctx.measureText(line).width;
         ctx.fillText(line, blackX + (blackWidth - textWidth) / 2, quoteY);
         quoteY += fontSize * 1.2;
     });
 
-    // Server name with purple glow (fancy letters preserved)
+    // Server name in glowing purple
     const serverFont = Math.floor(fontSize * 0.4);
-    ctx.font = `${serverFont}px Sans`;
-    ctx.fillStyle = '#9b59b6';
-    ctx.shadowColor = '#a569bd';
-    ctx.shadowBlur = 10;
-    ctx.fillText(`- ${serverName}`, avatarSize + padding, height - 85);
+    ctx.font = `${serverFont}px "NotoSans"`;
+    ctx.shadowColor = '#8e2eff';
+    ctx.shadowBlur = 15;
+    ctx.fillStyle = '#d19eff';
+    ctx.fillText(`- ${serverName}`, avatarSize + padding, height - 80);
 
-    // Reset shadow for nickname/username
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = '#ffffff';
+    // Nickname + username
     const userFont = Math.floor(fontSize * 0.3);
-    ctx.font = `${userFont}px Sans`;
-    ctx.fillText(`${sanitizeText(nickname)} (@${sanitizeText(username)})`, avatarSize + padding, height - 55);
+    ctx.font = `${userFont}px "NotoSans"`;
+    ctx.shadowColor = 'transparent';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(`${nickname} (@${username})`, avatarSize + padding, height - 50);
 
     return canvas.toBuffer();
 }
 
-// -------------------------
-// Wildcard triggers
-// -------------------------
 const wildcardTriggers = ['quote', 'ass'];
 
 client.on('messageCreate', async (message) => {
