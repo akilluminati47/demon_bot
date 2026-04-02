@@ -7,7 +7,7 @@ const { registerFont } = require('canvas');
 const path = require('path');
 
 // ------------------
-// Register all fonts
+// Register fonts
 // ------------------
 registerFont(path.join(__dirname, 'fonts', 'NotoSans-Regular.ttf'), { family: 'NotoSans' });
 registerFont(path.join(__dirname, 'fonts', 'NotoColorEmoji.ttf'), { family: 'NotoEmoji' });
@@ -33,6 +33,7 @@ client.once('ready', () => {
 });
 
 const GOLDEN_RATIO = 1.618;
+const WILDCARD_TRIGGERS = ['quote', 'ass'];
 
 // ------------------
 // Text wrapping
@@ -43,6 +44,7 @@ function wrapTextGolden(ctx, text, maxWidth, maxHeight, maxFontSize) {
 
     while (fontSize > 10) {
         ctx.font = `${fontSize}px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoEmoji", "NotoMath"`;
+
         let words = text.split(' ').flatMap(word => {
             if (ctx.measureText(word).width > maxWidth) {
                 return word.match(/.{1,12}/g) || [word];
@@ -52,6 +54,7 @@ function wrapTextGolden(ctx, text, maxWidth, maxHeight, maxFontSize) {
 
         lines = [];
         let line = '';
+
         for (let word of words) {
             const testLine = line + word + ' ';
             if (ctx.measureText(testLine).width > maxWidth) {
@@ -61,10 +64,12 @@ function wrapTextGolden(ctx, text, maxWidth, maxHeight, maxFontSize) {
                 line = testLine;
             }
         }
+
         if (line) lines.push(line.trim());
 
         const totalHeight = lines.length * (fontSize * 1.2);
         if (totalHeight <= maxHeight) break;
+
         fontSize -= 2;
     }
 
@@ -72,22 +77,26 @@ function wrapTextGolden(ctx, text, maxWidth, maxHeight, maxFontSize) {
 }
 
 // ------------------
-// Fetch top reaction message
+// Fetch top reaction
 // ------------------
 async function getTopReactionMessage(channel, userId) {
     const messages = await channel.messages.fetch({ limit: 100 });
+
     let top = null;
     let maxReacts = 0;
+
     messages.forEach(msg => {
         if (msg.author.id === userId && msg.reactions.cache.size) {
             let count = 0;
             msg.reactions.cache.forEach(r => count += r.count);
+
             if (count > maxReacts) {
                 maxReacts = count;
                 top = msg;
             }
         }
     });
+
     return top;
 }
 
@@ -98,8 +107,10 @@ function extractURLs(text) {
     const urls = [];
     const raw = text.match(/https?:\/\/[^\s\)]+/gi) || [];
     urls.push(...raw);
+
     const md = [...text.matchAll(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/gi)];
     md.forEach(m => urls.push(m[2]));
+
     return urls;
 }
 
@@ -129,15 +140,13 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     const blackWidth = width - avatarSize - padding * 2;
     const blackHeight = height - padding * 2;
 
-    // Add quotes
+    // Add quotation marks
     text = `"${text}"`;
 
     const goldenHeight = blackHeight / GOLDEN_RATIO;
     const { lines, fontSize } = wrapTextGolden(ctx, text, blackWidth, goldenHeight, 60);
 
-    const totalTextHeight = lines.length * fontSize * 1.2;
-    const metaHeight = 100;
-    let quoteY = blackY + (blackHeight - totalTextHeight - metaHeight) / 2;
+    let quoteY = blackY + (blackHeight - (lines.length * fontSize * 1.2) - 100) / 2;
 
     ctx.fillStyle = '#ffffff';
     ctx.textBaseline = 'top';
@@ -149,57 +158,67 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
         quoteY += fontSize * 1.2;
     });
 
-    // Glow server name
+    // 🌈 Gradient Glow Server Name
     const serverFont = Math.floor(fontSize * 0.4);
+
+    const gradient = ctx.createLinearGradient(blackX, 0, blackX + 300, 0);
+    gradient.addColorStop(0, '#d580ff'); // bright purple
+    gradient.addColorStop(1, '#6a00ff'); // dark purple
+
     ctx.font = `${serverFont}px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoEmoji", "NotoMath"`;
-    ctx.shadowColor = '#b14eff';
-    ctx.shadowBlur = 30;
-    ctx.fillStyle = '#d19eff';
+    ctx.shadowColor = '#a855f7';
+    ctx.shadowBlur = 40;
+    ctx.fillStyle = gradient;
+
     ctx.fillText(`- ${serverName}`, avatarSize + padding, height - 80);
 
     // Username
     const userFont = Math.floor(fontSize * 0.3);
-    ctx.font = `${userFont}px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoEmoji", "NotoMath"`;
-    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
     ctx.fillStyle = '#ffffff';
+    ctx.font = `${userFont}px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoEmoji", "NotoMath"`;
+
     ctx.fillText(`${nickname} (@${username})`, avatarSize + padding, height - 50);
 
     return canvas.toBuffer();
 }
 
 // ------------------
-// Message handler (FIXED LOGIC)
+// Message handler (FINAL FIXED)
 // ------------------
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
     const content = message.content.toLowerCase();
     let targetMessage = null;
-    let linkURLs = [];
 
-    // 1️⃣ Reply quoting (priority)
-    if (message.reference && content.includes('quote','ass')) {
+    // 1️⃣ Reply trigger (quote OR ass)
+    if (message.reference && WILDCARD_TRIGGERS.some(t => content.includes(t))) {
         try {
             targetMessage = await message.channel.messages.fetch(message.reference.messageId);
         } catch {
             return message.reply("Couldn't fetch the replied message.");
         }
     }
-    // 2️⃣ Mention quoting
+
+    // 2️⃣ Mention trigger
     else if (content.startsWith('quote') && message.mentions.users.size) {
         const user = message.mentions.users.first();
         targetMessage = await getTopReactionMessage(message.channel, user.id);
-        if (!targetMessage) return message.reply("No messages with reactions found for that user.");
+
+        if (!targetMessage) {
+            return message.reply("No messages with reactions found for that user.");
+        }
     }
+
     // 3️⃣ Self quote
     else if (content.startsWith('quote')) {
         targetMessage = message;
     }
-    else {
-        return;
-    }
 
-    linkURLs = extractURLs(targetMessage.content);
+    else return;
+
+    const linkURLs = extractURLs(targetMessage.content);
 
     let text = targetMessage.content
         .replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/gi, '🌐')
@@ -220,13 +239,16 @@ client.on('messageCreate', async (message) => {
         );
 
         let row = null;
+
         if (linkURLs.length > 0) {
             row = new ActionRowBuilder();
+
             linkURLs.slice(0, 5).forEach(url => {
                 const button = new ButtonBuilder()
                     .setLabel('🌐')
                     .setStyle(ButtonStyle.Link)
                     .setURL(url);
+
                 row.addComponents(button);
             });
         }
