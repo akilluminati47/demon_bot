@@ -1,5 +1,3 @@
-// (FULL FILE — updated layout + link buttons restored)
-
 require('dotenv').config();
 const { Client, GatewayIntentBits, Partials, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const Canvas = require('canvas');
@@ -29,11 +27,8 @@ client.once('ready', () => {
     console.log(`Logged in as ${client.user.tag}`);
 });
 
-const GOLDEN_RATIO = 1.618;
 const WILDCARD_TRIGGERS = ['quote', 'ass'];
 
-// ------------------
-// TEXT WRAP
 // ------------------
 function wrapText(ctx, text, maxWidth, maxFontSize) {
     let fontSize = maxFontSize;
@@ -66,13 +61,8 @@ function wrapText(ctx, text, maxWidth, maxFontSize) {
 }
 
 // ------------------
-// URL EXTRACT (RESTORED)
-// ------------------
 function extractURLs(text) {
-    const urls = [];
-    const raw = text.match(/https?:\/\/[^\s]+/gi) || [];
-    urls.push(...raw);
-    return urls;
+    return text.match(/https?:\/\/[^\s]+/gi) || [];
 }
 
 // ------------------
@@ -123,7 +113,7 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     const contentX = height + padding;
     const contentWidth = width - height - padding * 2;
 
-    // IMAGE MODE
+    // IMAGE
     if (imageUrl) {
         try {
             const img = await Canvas.loadImage(imageUrl);
@@ -150,22 +140,36 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
         } catch {}
     }
 
-    // TEXT (LEFT ALIGNED + LOWERED)
+    // TEXT
     text = text ? `"${text}"` : "";
 
-    const { lines, fontSize } = wrapText(ctx, text, contentWidth, 60);
+    let { lines, fontSize } = wrapText(ctx, text, contentWidth, 60);
 
-    let y = padding + 40; // LOWERED
+    // 🎯 SINGLE LINE CENTER BOOST
+    let y;
+    const isSingleLine = lines.length === 1;
 
-    ctx.fillStyle = '#fff';
-
-    lines.forEach(line => {
+    if (isSingleLine) {
+        fontSize += 10; // scale up
         ctx.font = `${fontSize}px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoEmoji", "NotoMath"`;
-        ctx.fillText(line, contentX, y);
-        y += fontSize * 1.2;
-    });
 
-    // METADATA (LOWERED)
+        const textWidth = ctx.measureText(lines[0]).width;
+        y = height / 2 - fontSize / 2;
+
+        ctx.fillStyle = '#fff';
+        ctx.fillText(lines[0], contentX + (contentWidth - textWidth) / 2, y);
+    } else {
+        y = padding + 40;
+        ctx.fillStyle = '#fff';
+
+        lines.forEach(line => {
+            ctx.font = `${fontSize}px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoEmoji", "NotoMath"`;
+            ctx.fillText(line, contentX, y);
+            y += fontSize * 1.2;
+        });
+    }
+
+    // METADATA
     const gradient = ctx.createLinearGradient(contentX, 0, contentX + 300, 0);
     gradient.addColorStop(0, '#d580ff');
     gradient.addColorStop(1, '#6a00ff');
@@ -236,7 +240,6 @@ client.on('messageCreate', async (message) => {
     }
     else return;
 
-    // 🔗 FIXED LINKS
     const linkURLs = extractURLs(targetMessage.content);
 
     const text = getMessageText(targetMessage)
@@ -255,7 +258,6 @@ client.on('messageCreate', async (message) => {
         image
     );
 
-    // 🔗 BUTTONS RESTORED
     let components = [];
 
     if (linkURLs.length > 0) {
@@ -273,10 +275,17 @@ client.on('messageCreate', async (message) => {
         components.push(row);
     }
 
-    await message.channel.send({
+    const sent = await message.channel.send({
         files: [{ attachment: buffer, name: 'quote.png' }],
         components
     });
+
+    // 🧹 DELETE COMMAND MESSAGE
+    try {
+        await message.delete();
+    } catch (err) {
+        console.log("Missing permission to delete message");
+    }
 });
 
 client.login(process.env.TOKEN);
