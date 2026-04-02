@@ -6,12 +6,18 @@ const sharp = require('sharp');
 const { registerFont } = require('canvas');
 const path = require('path');
 
-// Register all Noto fonts
+// ------------------
+// Register all fonts
+// ------------------
 registerFont(path.join(__dirname, 'fonts', 'NotoSans-Regular.ttf'), { family: 'NotoSans' });
 registerFont(path.join(__dirname, 'fonts', 'NotoColorEmoji.ttf'), { family: 'NotoEmoji' });
 registerFont(path.join(__dirname, 'fonts', 'NotoSansSymbols-Regular.ttf'), { family: 'NotoSymbols' });
 registerFont(path.join(__dirname, 'fonts', 'NotoSansSymbols2-Regular.ttf'), { family: 'NotoSymbols2' });
+registerFont(path.join(__dirname, 'fonts', 'NotoSansMath-Regular.ttf'), { family: 'NotoMath' });
 
+// ------------------
+// Discord client
+// ------------------
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -28,26 +34,15 @@ client.once('ready', () => {
 
 const GOLDEN_RATIO = 1.618;
 
-function sanitizeText(text) {
-    const charMap = {
-        '𝔸':'A','𝔹':'B','ℂ':'C','𝔻':'D','𝔼':'E','𝔽':'F','𝔾':'G',
-        'ℍ':'H','𝕀':'I','𝕁':'J','𝕂':'K','𝕃':'L','𝕄':'M','ℕ':'N',
-        '𝕆':'O','ℙ':'P','ℚ':'Q','ℝ':'R','𝕊':'S','𝕋':'T','𝕌':'U',
-        '𝕍':'V','𝕎':'W','𝕏':'X','𝕐':'Y','ℤ':'Z',
-        '𝕒':'a','𝕓':'b','𝕔':'c','𝕕':'d','𝕖':'e','𝕗':'f','𝕘':'g',
-        '𝕙':'h','𝕚':'i','𝕛':'j','𝕜':'k','𝕝':'l','𝕞':'m','𝕟':'n',
-        '𝕠':'o','𝕡':'p','𝕢':'q','𝕣':'r','𝕤':'s','𝕥':'t','𝕦':'u',
-        '𝕧':'v','𝕨':'w','𝕩':'x','𝕪':'y','𝕫':'z'
-    };
-    return text.split('').map(c => charMap[c] || c).join('');
-}
-
+// ------------------
+// Text wrapping
+// ------------------
 function wrapTextGolden(ctx, text, maxWidth, maxHeight, maxFontSize) {
     let fontSize = maxFontSize;
     let lines = [];
 
     while (fontSize > 10) {
-        ctx.font = `${fontSize}px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoEmoji"`;
+        ctx.font = `${fontSize}px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoEmoji", "NotoMath"`;
         let words = text.split(' ').flatMap(word => {
             if (ctx.measureText(word).width > maxWidth) {
                 return word.match(/.{1,12}/g) || [word];
@@ -76,6 +71,9 @@ function wrapTextGolden(ctx, text, maxWidth, maxHeight, maxFontSize) {
     return { lines, fontSize };
 }
 
+// ------------------
+// Fetch top reaction message
+// ------------------
 async function getTopReactionMessage(channel, userId) {
     const messages = await channel.messages.fetch({ limit: 100 });
     let top = null;
@@ -93,6 +91,9 @@ async function getTopReactionMessage(channel, userId) {
     return top;
 }
 
+// ------------------
+// Extract URLs for buttons
+// ------------------
 function extractURLs(text) {
     const urls = [];
     const raw = text.match(/https?:\/\/[^\s\)]+/gi) || [];
@@ -102,6 +103,9 @@ function extractURLs(text) {
     return urls;
 }
 
+// ------------------
+// Generate quote image
+// ------------------
 async function generateQuoteImage(text, username, avatarURL, serverName, nickname) {
     const width = 1000;
     const height = 400;
@@ -126,7 +130,6 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     const blackWidth = width - avatarSize - padding * 2;
     const blackHeight = height - padding * 2;
 
-    text = sanitizeText(`"${text}"`);
     const goldenHeight = blackHeight / GOLDEN_RATIO;
     const { lines, fontSize } = wrapTextGolden(ctx, text, blackWidth, goldenHeight, 60);
 
@@ -137,7 +140,7 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     ctx.fillStyle = '#ffffff';
     ctx.textBaseline = 'top';
     lines.forEach(line => {
-        ctx.font = `${fontSize}px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoEmoji"`;
+        ctx.font = `${fontSize}px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoEmoji", "NotoMath"`;
         const textWidth = ctx.measureText(line).width;
         ctx.fillText(line, blackX + (blackWidth - textWidth) / 2, quoteY);
         quoteY += fontSize * 1.2;
@@ -145,7 +148,7 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
 
     // Server name
     const serverFont = Math.floor(fontSize * 0.4);
-    ctx.font = `${serverFont}px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoEmoji"`;
+    ctx.font = `${serverFont}px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoEmoji", "NotoMath"`;
     ctx.shadowColor = '#8e2eff';
     ctx.shadowBlur = 15;
     ctx.fillStyle = '#d19eff';
@@ -153,7 +156,7 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
 
     // Nickname + username
     const userFont = Math.floor(fontSize * 0.3);
-    ctx.font = `${userFont}px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoEmoji"`;
+    ctx.font = `${userFont}px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoEmoji", "NotoMath"`;
     ctx.shadowColor = 'transparent';
     ctx.fillStyle = '#ffffff';
     ctx.fillText(`${nickname} (@${username})`, avatarSize + padding, height - 50);
@@ -161,8 +164,14 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     return canvas.toBuffer();
 }
 
+// ------------------
+// Wildcard triggers
+// ------------------
 const wildcardTriggers = ['quote', 'ass'];
 
+// ------------------
+// Message handler
+// ------------------
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
     const content = message.content.toLowerCase();
@@ -173,15 +182,13 @@ client.on('messageCreate', async (message) => {
         const user = message.mentions.users.first();
         targetMessage = await getTopReactionMessage(message.channel, user.id);
         if (!targetMessage) return message.reply("No messages with reactions found for that user.");
-    }
-    else if (message.reference && wildcardTriggers.some(t => content.includes(t))) {
+    } else if (message.reference && wildcardTriggers.some(t => content.includes(t))) {
         try {
             targetMessage = await message.channel.messages.fetch(message.reference.messageId);
         } catch {
             return message.reply("Couldn't fetch the replied message.");
         }
-    }
-    else if (content.startsWith('quote')) {
+    } else if (content.startsWith('quote')) {
         targetMessage = message;
     } else {
         return;
