@@ -92,7 +92,7 @@ async function getTopReactionMessage(channel, userId) {
 }
 
 // ------------------
-// Extract URLs for buttons
+// Extract URLs
 // ------------------
 function extractURLs(text) {
     const urls = [];
@@ -104,7 +104,7 @@ function extractURLs(text) {
 }
 
 // ------------------
-// Generate quote image (updated for quotation marks and glow)
+// Generate image
 // ------------------
 async function generateQuoteImage(text, username, avatarURL, serverName, nickname) {
     const width = 1000;
@@ -112,15 +112,14 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     const canvas = Canvas.createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
-    // Black background
     ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, width, height);
 
-    // Avatar
     const response = await fetch(avatarURL);
     const avatarBuffer = await response.buffer();
     const pngBuffer = await sharp(avatarBuffer).png().toBuffer();
     const avatar = await Canvas.loadImage(pngBuffer);
+
     const avatarSize = height;
     ctx.drawImage(avatar, 0, 0, avatarSize, avatarSize);
 
@@ -130,7 +129,7 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     const blackWidth = width - avatarSize - padding * 2;
     const blackHeight = height - padding * 2;
 
-    // Wrap the quote in quotation marks
+    // Add quotes
     text = `"${text}"`;
 
     const goldenHeight = blackHeight / GOLDEN_RATIO;
@@ -142,6 +141,7 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
 
     ctx.fillStyle = '#ffffff';
     ctx.textBaseline = 'top';
+
     lines.forEach(line => {
         ctx.font = `${fontSize}px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoEmoji", "NotoMath"`;
         const textWidth = ctx.measureText(line).width;
@@ -149,15 +149,15 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
         quoteY += fontSize * 1.2;
     });
 
-    // Server name with stronger glow
+    // Glow server name
     const serverFont = Math.floor(fontSize * 0.4);
     ctx.font = `${serverFont}px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoEmoji", "NotoMath"`;
     ctx.shadowColor = '#b14eff';
-    ctx.shadowBlur = 30; // stronger glow
+    ctx.shadowBlur = 30;
     ctx.fillStyle = '#d19eff';
     ctx.fillText(`- ${serverName}`, avatarSize + padding, height - 80);
 
-    // Nickname + username
+    // Username
     const userFont = Math.floor(fontSize * 0.3);
     ctx.font = `${userFont}px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoEmoji", "NotoMath"`;
     ctx.shadowColor = 'transparent';
@@ -168,36 +168,39 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
 }
 
 // ------------------
-// Wildcard triggers
-// ------------------
-const wildcardTriggers = ['quote', 'ass'];
-
-// ------------------
-// Message handler
+// Message handler (FIXED LOGIC)
 // ------------------
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
+
     const content = message.content.toLowerCase();
     let targetMessage = null;
     let linkURLs = [];
 
-    if (content.startsWith('quote') && message.mentions.users.size) {
-        const user = message.mentions.users.first();
-        targetMessage = await getTopReactionMessage(message.channel, user.id);
-        if (!targetMessage) return message.reply("No messages with reactions found for that user.");
-    } else if (message.reference && wildcardTriggers.some(t => content.includes(t))) {
+    // 1️⃣ Reply quoting (priority)
+    if (message.reference && content.includes('quote')) {
         try {
             targetMessage = await message.channel.messages.fetch(message.reference.messageId);
         } catch {
             return message.reply("Couldn't fetch the replied message.");
         }
-    } else if (content.startsWith('quote')) {
+    }
+    // 2️⃣ Mention quoting
+    else if (content.startsWith('quote') && message.mentions.users.size) {
+        const user = message.mentions.users.first();
+        targetMessage = await getTopReactionMessage(message.channel, user.id);
+        if (!targetMessage) return message.reply("No messages with reactions found for that user.");
+    }
+    // 3️⃣ Self quote
+    else if (content.startsWith('quote')) {
         targetMessage = message;
-    } else {
+    }
+    else {
         return;
     }
 
     linkURLs = extractURLs(targetMessage.content);
+
     let text = targetMessage.content
         .replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/gi, '🌐')
         .replace(/https?:\/\/[^\s\)]+/gi, '🌐');
@@ -232,6 +235,7 @@ client.on('messageCreate', async (message) => {
             files: [{ attachment: buffer, name: 'quote.png' }],
             components: row ? [row] : []
         });
+
     } catch (err) {
         console.error(err);
         message.reply("Failed to generate quote image.");
