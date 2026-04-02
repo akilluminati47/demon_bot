@@ -6,8 +6,11 @@ const sharp = require('sharp');
 const { registerFont } = require('canvas');
 const path = require('path');
 
-// Register the Noto Sans font from the fonts folder
-registerFont(path.join(__dirname, 'fonts', 'noto-sans.regular.ttf'), { family: 'NotoSans' });
+// Register all Noto fonts
+registerFont(path.join(__dirname, 'fonts', 'NotoSans-Regular.ttf'), { family: 'NotoSans' });
+registerFont(path.join(__dirname, 'fonts', 'NotoColorEmoji.ttf'), { family: 'NotoEmoji' });
+registerFont(path.join(__dirname, 'fonts', 'NotoSansSymbols-Regular.ttf'), { family: 'NotoSymbols' });
+registerFont(path.join(__dirname, 'fonts', 'NotoSansSymbols2-Regular.ttf'), { family: 'NotoSymbols2' });
 
 const client = new Client({
     intents: [
@@ -25,7 +28,6 @@ client.once('ready', () => {
 
 const GOLDEN_RATIO = 1.618;
 
-// Sanitize fancy Unicode letters to standard ones if missing in font
 function sanitizeText(text) {
     const charMap = {
         '𝔸':'A','𝔹':'B','ℂ':'C','𝔻':'D','𝔼':'E','𝔽':'F','𝔾':'G',
@@ -45,7 +47,7 @@ function wrapTextGolden(ctx, text, maxWidth, maxHeight, maxFontSize) {
     let lines = [];
 
     while (fontSize > 10) {
-        ctx.font = `${fontSize}px "NotoSans"`;
+        ctx.font = `${fontSize}px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoEmoji"`;
         let words = text.split(' ').flatMap(word => {
             if (ctx.measureText(word).width > maxWidth) {
                 return word.match(/.{1,12}/g) || [word];
@@ -135,15 +137,15 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     ctx.fillStyle = '#ffffff';
     ctx.textBaseline = 'top';
     lines.forEach(line => {
-        ctx.font = `${fontSize}px "NotoSans"`;
+        ctx.font = `${fontSize}px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoEmoji"`;
         const textWidth = ctx.measureText(line).width;
         ctx.fillText(line, blackX + (blackWidth - textWidth) / 2, quoteY);
         quoteY += fontSize * 1.2;
     });
 
-    // Server name in glowing purple
+    // Server name
     const serverFont = Math.floor(fontSize * 0.4);
-    ctx.font = `${serverFont}px "NotoSans"`;
+    ctx.font = `${serverFont}px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoEmoji"`;
     ctx.shadowColor = '#8e2eff';
     ctx.shadowBlur = 15;
     ctx.fillStyle = '#d19eff';
@@ -151,7 +153,7 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
 
     // Nickname + username
     const userFont = Math.floor(fontSize * 0.3);
-    ctx.font = `${userFont}px "NotoSans"`;
+    ctx.font = `${userFont}px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoEmoji"`;
     ctx.shadowColor = 'transparent';
     ctx.fillStyle = '#ffffff';
     ctx.fillText(`${nickname} (@${username})`, avatarSize + padding, height - 50);
