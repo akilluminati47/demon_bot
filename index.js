@@ -34,26 +34,33 @@ function wrapText(ctx, text, maxWidth, maxFontSize) {
     let fontSize = maxFontSize;
     let lines = [];
 
+    const paragraphs = text.split(/\r?\n/);
+
     while (fontSize > 10) {
         ctx.font = `${fontSize}px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoEmoji", "NotoMath"`;
-
-        let words = text.split(' ');
         lines = [];
-        let line = '';
 
-        for (let word of words) {
-            const test = line + word + ' ';
-            if (ctx.measureText(test).width > maxWidth) {
-                if (line) lines.push(line.trim());
-                line = word + ' ';
-            } else {
-                line = test;
+        for (const para of paragraphs) {
+            if (!para.trim()) {
+                lines.push(''); // preserve empty lines
+                continue;
             }
+            const words = para.split(' ');
+            let line = '';
+            for (const word of words) {
+                const test = line + word + ' ';
+                if (ctx.measureText(test).width > maxWidth) {
+                    if (line) lines.push(line.trim());
+                    line = word + ' ';
+                } else {
+                    line = test;
+                }
+            }
+            if (line) lines.push(line.trim());
         }
 
-        if (line) lines.push(line.trim());
-
-        if (lines.length * fontSize * 1.2 < 250) break;
+        const totalHeight = lines.length * fontSize * 1.2;
+        if (totalHeight <= 250) break;
         fontSize -= 2;
     }
 
@@ -68,12 +75,10 @@ function extractURLs(text) {
 // ------------------
 function getMessageText(msg) {
     if (msg.content?.trim()) return msg.content;
-
     if (msg.embeds.length > 0) {
         const e = msg.embeds[0];
         return e.title || e.description || "";
     }
-
     return "";
 }
 
@@ -83,12 +88,10 @@ function getImageFromMessage(msg) {
         const att = msg.attachments.first();
         if (att.contentType?.startsWith('image')) return att.url;
     }
-
     if (msg.embeds.length > 0) {
         const e = msg.embeds[0];
         if (e.image?.url) return e.image.url;
     }
-
     return null;
 }
 
@@ -113,19 +116,16 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     const contentX = height + padding;
     const contentWidth = width - height - padding * 2;
 
-    // IMAGE
+    // IMAGE BACKGROUND
     if (imageUrl) {
         try {
             const img = await Canvas.loadImage(imageUrl);
-
             const scale = Math.min(
                 contentWidth / img.width,
                 (height - padding * 2) / img.height
             );
-
             const w = img.width * scale;
             const h = img.height * scale;
-
             ctx.drawImage(
                 img,
                 contentX + (contentWidth - w) / 2,
@@ -133,40 +133,37 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
                 w,
                 h
             );
-
             ctx.fillStyle = 'rgba(0,0,0,0.35)';
             ctx.fillRect(contentX, padding, contentWidth, height - padding * 2);
-
         } catch {}
     }
 
     // TEXT
     text = text ? `"${text}"` : "";
+    const { lines, fontSize } = wrapText(ctx, text, contentWidth, 60);
 
-    let { lines, fontSize } = wrapText(ctx, text, contentWidth, 60);
+    // compute vertical start
+    const totalTextHeight = lines.length * fontSize * 1.2;
+    let yStart = padding + 40;
 
-    // 🎯 SINGLE LINE CENTER BOOST
-    let y;
-    const isSingleLine = lines.length === 1;
+    // Smart single-line detection ignoring empty lines
+    const nonEmptyLines = lines.filter(l => l.trim() !== '');
+    const isSingleLogicalLine = nonEmptyLines.length === 1;
 
-    if (isSingleLine) {
-        fontSize += 10; // scale up
-        ctx.font = `${fontSize}px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoEmoji", "NotoMath"`;
-
-        const textWidth = ctx.measureText(lines[0]).width;
-        y = height / 2 - fontSize / 2;
-
+    if (isSingleLogicalLine) {
+        ctx.font = `${fontSize + 10}px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoEmoji", "NotoMath"`;
+        const textWidth = ctx.measureText(nonEmptyLines[0]).width;
+        yStart = height / 2 - (fontSize + 10) / 2;
         ctx.fillStyle = '#fff';
-        ctx.fillText(lines[0], contentX + (contentWidth - textWidth) / 2, y);
+        ctx.fillText(nonEmptyLines[0], contentX + (contentWidth - textWidth) / 2, yStart);
     } else {
-        y = padding + 40;
+        let y = yStart;
         ctx.fillStyle = '#fff';
-
-        lines.forEach(line => {
+        for (const line of lines) {
             ctx.font = `${fontSize}px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoEmoji", "NotoMath"`;
             ctx.fillText(line, contentX, y);
             y += fontSize * 1.2;
-        });
+        }
     }
 
     // METADATA
@@ -191,27 +188,22 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
 async function getTopReactionMessageGlobal(guild, userId) {
     let top = null;
     let maxReacts = 0;
-
     const channels = await guild.channels.fetch();
 
     for (const [, channel] of channels) {
         if (!channel.isTextBased()) continue;
-
         try {
             const messages = await channel.messages.fetch({ limit: 50 });
-
             messages.forEach(msg => {
                 if (msg.author.id === userId && msg.reactions.cache.size) {
                     let count = 0;
                     msg.reactions.cache.forEach(r => count += r.count);
-
                     if (count > maxReacts) {
                         maxReacts = count;
                         top = msg;
                     }
                 }
             });
-
         } catch {}
     }
 
@@ -227,24 +219,18 @@ client.on('messageCreate', async (message) => {
 
     if (message.reference && WILDCARD_TRIGGERS.some(t => content.includes(t))) {
         targetMessage = await message.channel.messages.fetch(message.reference.messageId);
-    }
-    else if (content.startsWith('quote') && message.mentions.users.size) {
+    } else if (content.startsWith('quote') && message.mentions.users.size) {
         const user = message.mentions.users.first();
         targetMessage = await getTopReactionMessageGlobal(message.guild, user.id);
         if (!targetMessage) return message.reply("No messages found.");
-    }
-    else if (content.startsWith('quote')) {
+    } else if (content.startsWith('quote')) {
         let cleaned = message.content.replace(/^quote\s*/i, '');
         if (!cleaned.trim()) cleaned = message.content;
         targetMessage = { ...message, content: cleaned };
-    }
-    else return;
+    } else return;
 
     const linkURLs = extractURLs(targetMessage.content);
-
-    const text = getMessageText(targetMessage)
-        .replace(/https?:\/\/[^\s]+/gi, '🌐');
-
+    const text = getMessageText(targetMessage).replace(/https?:\/\/[^\s]+/gi, '🌐');
     const user = targetMessage.author;
     const member = message.guild?.members.cache.get(user.id);
     const image = getImageFromMessage(targetMessage);
@@ -259,10 +245,8 @@ client.on('messageCreate', async (message) => {
     );
 
     let components = [];
-
     if (linkURLs.length > 0) {
         const row = new ActionRowBuilder();
-
         linkURLs.slice(0, 5).forEach(url => {
             row.addComponents(
                 new ButtonBuilder()
@@ -271,7 +255,6 @@ client.on('messageCreate', async (message) => {
                     .setURL(url)
             );
         });
-
         components.push(row);
     }
 
@@ -280,7 +263,7 @@ client.on('messageCreate', async (message) => {
         components
     });
 
-    // 🧹 DELETE COMMAND MESSAGE
+    // DELETE command usage
     try {
         await message.delete();
     } catch (err) {
