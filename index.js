@@ -31,8 +31,6 @@ const GOLDEN_RATIO = 1.618;
 const WILDCARD_TRIGGERS = ['quote', 'ass'];
 
 // ------------------
-// TEXT WRAP
-// ------------------
 function wrapTextGolden(ctx, text, maxWidth, maxHeight, maxFontSize) {
     let fontSize = maxFontSize;
     let lines = [];
@@ -72,8 +70,6 @@ function wrapTextGolden(ctx, text, maxWidth, maxHeight, maxFontSize) {
 }
 
 // ------------------
-// GLOBAL SEARCH
-// ------------------
 async function getTopReactionMessageGlobal(guild, userId) {
     let top = null;
     let maxReacts = 0;
@@ -97,7 +93,6 @@ async function getTopReactionMessageGlobal(guild, userId) {
                     }
                 }
             });
-
         } catch {}
     }
 
@@ -105,21 +100,17 @@ async function getTopReactionMessageGlobal(guild, userId) {
 }
 
 // ------------------
-// EXTRACT TEXT
-// ------------------
 function getMessageText(msg) {
     if (msg.content?.trim()) return msg.content;
 
     if (msg.embeds.length > 0) {
         const e = msg.embeds[0];
-        return e.title || e.description || "Embedded message";
+        return e.title || e.description || "";
     }
 
-    return "No text content";
+    return ""; // removed placeholder
 }
 
-// ------------------
-// IMAGE DETECTION
 // ------------------
 function getImageFromMessage(msg) {
     if (msg.attachments.size > 0) {
@@ -137,60 +128,27 @@ function getImageFromMessage(msg) {
 }
 
 // ------------------
-// BRIGHTNESS DETECTION
-// ------------------
-async function getAverageBrightness(imageBuffer) {
-    const { data } = await sharp(imageBuffer)
-        .resize(10, 10)
-        .raw()
-        .toBuffer({ resolveWithObject: true });
-
-    let total = 0;
-
-    for (let i = 0; i < data.length; i += 3) {
-        total += (data[i] + data[i + 1] + data[i + 2]) / 3;
-    }
-
-    return total / (data.length / 3);
-}
-
-// ------------------
-// GENERATE IMAGE
-// ------------------
 async function generateQuoteImage(text, username, avatarURL, serverName, nickname, bgImageUrl) {
     const width = 1000;
     const height = 400;
+    const borderSize = 6;
 
     const canvas = Canvas.createCanvas(width, height);
     const ctx = canvas.getContext('2d');
-
-    let textColor = '#ffffff';
 
     // ------------------
     // BACKGROUND
     // ------------------
     if (bgImageUrl) {
         try {
-            const res = await fetch(bgImageUrl);
-            const buffer = await res.buffer();
-
+            const buffer = await (await fetch(bgImageUrl)).buffer();
             const bg = await Canvas.loadImage(buffer);
 
-            // Blur effect
             ctx.filter = 'blur(12px)';
             ctx.drawImage(bg, 0, 0, width, height);
             ctx.filter = 'none';
 
-            // Brightness detect
-            const brightness = await getAverageBrightness(buffer);
-            if (brightness > 140) textColor = '#000000';
-
-            // Gradient overlay
-            const gradient = ctx.createLinearGradient(0, 0, width, height);
-            gradient.addColorStop(0, 'rgba(106,0,255,0.6)');
-            gradient.addColorStop(1, 'rgba(213,128,255,0.6)');
-
-            ctx.fillStyle = gradient;
+            ctx.fillStyle = 'rgba(0,0,0,0.55)';
             ctx.fillRect(0, 0, width, height);
 
         } catch {
@@ -202,7 +160,9 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
         ctx.fillRect(0, 0, width, height);
     }
 
-    // Avatar
+    // ------------------
+    // AVATAR
+    // ------------------
     const avatar = await Canvas.loadImage(
         await sharp(await (await fetch(avatarURL)).buffer()).png().toBuffer()
     );
@@ -214,14 +174,13 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     const blackWidth = width - height - padding * 2;
     const blackHeight = height - padding * 2;
 
-    text = `"${text}"`;
+    text = text ? `"${text}"` : "";
 
     const { lines, fontSize } = wrapTextGolden(ctx, text, blackWidth, blackHeight / GOLDEN_RATIO, 60);
 
-    const totalTextHeight = lines.length * fontSize * 1.2;
-    let y = padding + (blackHeight - totalTextHeight - 100) / 2;
+    let y = padding + (blackHeight - (lines.length * fontSize * 1.2) - 100) / 2;
 
-    ctx.fillStyle = textColor;
+    ctx.fillStyle = '#ffffff';
 
     lines.forEach(line => {
         ctx.font = `${fontSize}px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoEmoji", "NotoMath"`;
@@ -232,7 +191,9 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
         y += fontSize * 1.2;
     });
 
-    // Gradient glow server name
+    // ------------------
+    // SERVER NAME GLOW
+    // ------------------
     const gradient = ctx.createLinearGradient(blackX, 0, blackX + 300, 0);
     gradient.addColorStop(0, '#d580ff');
     gradient.addColorStop(1, '#6a00ff');
@@ -244,14 +205,23 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     ctx.fillText(`- ${serverName}`, blackX, height - 80);
 
     ctx.shadowBlur = 0;
-    ctx.fillStyle = textColor;
+    ctx.fillStyle = '#fff';
     ctx.fillText(`${nickname} (@${username})`, blackX, height - 50);
+
+    // ------------------
+    // 🌈 BORDER (NEW)
+    // ------------------
+    const borderGradient = ctx.createLinearGradient(0, 0, width, height);
+    borderGradient.addColorStop(0, '#d580ff');
+    borderGradient.addColorStop(1, '#6a00ff');
+
+    ctx.strokeStyle = borderGradient;
+    ctx.lineWidth = borderSize;
+    ctx.strokeRect(borderSize / 2, borderSize / 2, width - borderSize, height - borderSize);
 
     return canvas.toBuffer();
 }
 
-// ------------------
-// MESSAGE HANDLER
 // ------------------
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
@@ -259,27 +229,19 @@ client.on('messageCreate', async (message) => {
     const content = message.content.toLowerCase();
     let targetMessage = null;
 
-    // Reply
     if (message.reference && WILDCARD_TRIGGERS.some(t => content.includes(t))) {
         targetMessage = await message.channel.messages.fetch(message.reference.messageId);
     }
-
-    // Mention global
     else if (content.startsWith('quote') && message.mentions.users.size) {
         const user = message.mentions.users.first();
         targetMessage = await getTopReactionMessageGlobal(message.guild, user.id);
-
         if (!targetMessage) return message.reply("No messages found.");
     }
-
-    // Self
     else if (content.startsWith('quote')) {
         let cleaned = message.content.replace(/^quote\s*/i, '');
         if (!cleaned.trim()) cleaned = message.content;
-
         targetMessage = { ...message, content: cleaned };
     }
-
     else return;
 
     const text = getMessageText(targetMessage)
