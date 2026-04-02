@@ -178,7 +178,7 @@ client.on('messageCreate', async (message) => {
     let linkURLs = [];
 
     // 1️⃣ Reply quoting (priority)
-    if (message.reference && content.includes('quote')) {
+    if (message.reference && content.includes('quote','ass')) {
         try {
             targetMessage = await message.channel.messages.fetch(message.reference.messageId);
         } catch {
