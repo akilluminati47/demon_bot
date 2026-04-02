@@ -1,7 +1,7 @@
-// ONLY showing FULL FILE (clean final version)
+// (FULL FILE — updated layout + link buttons restored)
 
 require('dotenv').config();
-const { Client, GatewayIntentBits, Partials } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const Canvas = require('canvas');
 const fetch = require('node-fetch');
 const sharp = require('sharp');
@@ -33,42 +33,46 @@ const GOLDEN_RATIO = 1.618;
 const WILDCARD_TRIGGERS = ['quote', 'ass'];
 
 // ------------------
-function wrapTextGolden(ctx, text, maxWidth, maxHeight, maxFontSize) {
+// TEXT WRAP
+// ------------------
+function wrapText(ctx, text, maxWidth, maxFontSize) {
     let fontSize = maxFontSize;
     let lines = [];
 
     while (fontSize > 10) {
         ctx.font = `${fontSize}px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoEmoji", "NotoMath"`;
 
-        let words = text.split(' ').flatMap(word => {
-            if (ctx.measureText(word).width > maxWidth) {
-                return word.match(/.{1,12}/g) || [word];
-            }
-            return [word];
-        });
-
+        let words = text.split(' ');
         lines = [];
         let line = '';
 
         for (let word of words) {
-            const testLine = line + word + ' ';
-            if (ctx.measureText(testLine).width > maxWidth) {
+            const test = line + word + ' ';
+            if (ctx.measureText(test).width > maxWidth) {
                 if (line) lines.push(line.trim());
                 line = word + ' ';
             } else {
-                line = testLine;
+                line = test;
             }
         }
 
         if (line) lines.push(line.trim());
 
-        const totalHeight = lines.length * (fontSize * 1.2);
-        if (totalHeight <= maxHeight) break;
-
+        if (lines.length * fontSize * 1.2 < 250) break;
         fontSize -= 2;
     }
 
     return { lines, fontSize };
+}
+
+// ------------------
+// URL EXTRACT (RESTORED)
+// ------------------
+function extractURLs(text) {
+    const urls = [];
+    const raw = text.match(/https?:\/\/[^\s]+/gi) || [];
+    urls.push(...raw);
+    return urls;
 }
 
 // ------------------
@@ -93,7 +97,6 @@ function getImageFromMessage(msg) {
     if (msg.embeds.length > 0) {
         const e = msg.embeds[0];
         if (e.image?.url) return e.image.url;
-        if (e.thumbnail?.url) return e.thumbnail.url;
     }
 
     return null;
@@ -116,66 +119,53 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     );
     ctx.drawImage(avatar, 0, 0, height, height);
 
-    const padding = 30;
+    const padding = 40;
     const contentX = height + padding;
     const contentWidth = width - height - padding * 2;
-    const contentHeight = height - padding * 2;
 
-    // ------------------
     // IMAGE MODE
-    // ------------------
     if (imageUrl) {
         try {
             const img = await Canvas.loadImage(imageUrl);
 
-            // scale to fit without cropping
             const scale = Math.min(
                 contentWidth / img.width,
-                contentHeight / img.height
+                (height - padding * 2) / img.height
             );
 
-            const drawWidth = img.width * scale;
-            const drawHeight = img.height * scale;
+            const w = img.width * scale;
+            const h = img.height * scale;
 
-            const x = contentX + (contentWidth - drawWidth) / 2;
-            const y = padding + (contentHeight - drawHeight) / 2;
+            ctx.drawImage(
+                img,
+                contentX + (contentWidth - w) / 2,
+                padding + (height - padding * 2 - h) / 2,
+                w,
+                h
+            );
 
-            ctx.drawImage(img, x, y, drawWidth, drawHeight);
-
-            // slight overlay for text readability
-            ctx.fillStyle = 'rgba(0,0,0,0.4)';
-            ctx.fillRect(contentX, padding, contentWidth, contentHeight);
+            ctx.fillStyle = 'rgba(0,0,0,0.35)';
+            ctx.fillRect(contentX, padding, contentWidth, height - padding * 2);
 
         } catch {}
     }
 
-    // ------------------
-    // TEXT
-    // ------------------
+    // TEXT (LEFT ALIGNED + LOWERED)
     text = text ? `"${text}"` : "";
 
-    const { lines, fontSize } = wrapTextGolden(
-        ctx,
-        text,
-        contentWidth,
-        contentHeight / GOLDEN_RATIO,
-        60
-    );
+    const { lines, fontSize } = wrapText(ctx, text, contentWidth, 60);
 
-    let y = padding + (contentHeight - (lines.length * fontSize * 1.2) - 100) / 2;
+    let y = padding + 40; // LOWERED
 
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = '#fff';
 
     lines.forEach(line => {
         ctx.font = `${fontSize}px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoEmoji", "NotoMath"`;
-
-        const textWidth = ctx.measureText(line).width;
-        ctx.fillText(line, contentX + (contentWidth - textWidth) / 2, y);
-
+        ctx.fillText(line, contentX, y);
         y += fontSize * 1.2;
     });
 
-    // Server glow
+    // METADATA (LOWERED)
     const gradient = ctx.createLinearGradient(contentX, 0, contentX + 300, 0);
     gradient.addColorStop(0, '#d580ff');
     gradient.addColorStop(1, '#6a00ff');
@@ -184,17 +174,15 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     ctx.shadowBlur = 40;
     ctx.fillStyle = gradient;
     ctx.font = `24px "NotoSans"`;
-    ctx.fillText(`- ${serverName}`, contentX, height - 80);
+    ctx.fillText(`- ${serverName}`, contentX, height - 70);
 
     ctx.shadowBlur = 0;
     ctx.fillStyle = '#fff';
-    ctx.fillText(`${nickname} (@${username})`, contentX, height - 50);
+    ctx.fillText(`${nickname} (@${username})`, contentX, height - 40);
 
     return canvas.toBuffer();
 }
 
-// ------------------
-// GLOBAL SEARCH
 // ------------------
 async function getTopReactionMessageGlobal(guild, userId) {
     let top = null;
@@ -248,8 +236,11 @@ client.on('messageCreate', async (message) => {
     }
     else return;
 
+    // 🔗 FIXED LINKS
+    const linkURLs = extractURLs(targetMessage.content);
+
     const text = getMessageText(targetMessage)
-        .replace(/https?:\/\/[^\s\)]+/gi, '🌐');
+        .replace(/https?:\/\/[^\s]+/gi, '🌐');
 
     const user = targetMessage.author;
     const member = message.guild?.members.cache.get(user.id);
@@ -264,8 +255,27 @@ client.on('messageCreate', async (message) => {
         image
     );
 
+    // 🔗 BUTTONS RESTORED
+    let components = [];
+
+    if (linkURLs.length > 0) {
+        const row = new ActionRowBuilder();
+
+        linkURLs.slice(0, 5).forEach(url => {
+            row.addComponents(
+                new ButtonBuilder()
+                    .setLabel('🌐')
+                    .setStyle(ButtonStyle.Link)
+                    .setURL(url)
+            );
+        });
+
+        components.push(row);
+    }
+
     await message.channel.send({
-        files: [{ attachment: buffer, name: 'quote.png' }]
+        files: [{ attachment: buffer, name: 'quote.png' }],
+        components
     });
 });
 
