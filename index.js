@@ -7,7 +7,7 @@ const { registerFont } = require('canvas');
 const path = require('path');
 
 // ------------------
-// Register fonts
+// Fonts
 // ------------------
 registerFont(path.join(__dirname, 'fonts', 'NotoSans-Regular.ttf'), { family: 'NotoSans' });
 registerFont(path.join(__dirname, 'fonts', 'NotoColorEmoji.ttf'), { family: 'NotoEmoji' });
@@ -15,9 +15,6 @@ registerFont(path.join(__dirname, 'fonts', 'NotoSansSymbols-Regular.ttf'), { fam
 registerFont(path.join(__dirname, 'fonts', 'NotoSansSymbols2-Regular.ttf'), { family: 'NotoSymbols2' });
 registerFont(path.join(__dirname, 'fonts', 'NotoSansMath-Regular.ttf'), { family: 'NotoMath' });
 
-// ------------------
-// Discord client
-// ------------------
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -36,7 +33,7 @@ const GOLDEN_RATIO = 1.618;
 const WILDCARD_TRIGGERS = ['quote', 'ass'];
 
 // ------------------
-// Text wrapping
+// WRAP TEXT
 // ------------------
 function wrapTextGolden(ctx, text, maxWidth, maxHeight, maxFontSize) {
     let fontSize = maxFontSize;
@@ -77,25 +74,36 @@ function wrapTextGolden(ctx, text, maxWidth, maxHeight, maxFontSize) {
 }
 
 // ------------------
-// Fetch top reaction
+// 🔥 GLOBAL SEARCH (ALL CHANNELS)
 // ------------------
-async function getTopReactionMessage(channel, userId) {
-    const messages = await channel.messages.fetch({ limit: 100 });
-
+async function getTopReactionMessageGlobal(guild, userId) {
     let top = null;
     let maxReacts = 0;
 
-    messages.forEach(msg => {
-        if (msg.author.id === userId && msg.reactions.cache.size) {
-            let count = 0;
-            msg.reactions.cache.forEach(r => count += r.count);
+    const channels = await guild.channels.fetch();
 
-            if (count > maxReacts) {
-                maxReacts = count;
-                top = msg;
-            }
+    for (const [, channel] of channels) {
+        if (!channel.isTextBased()) continue;
+
+        try {
+            const messages = await channel.messages.fetch({ limit: 50 });
+
+            messages.forEach(msg => {
+                if (msg.author.id === userId && msg.reactions.cache.size) {
+                    let count = 0;
+                    msg.reactions.cache.forEach(r => count += r.count);
+
+                    if (count > maxReacts) {
+                        maxReacts = count;
+                        top = msg;
+                    }
+                }
+            });
+
+        } catch {
+            continue; // skip inaccessible channels
         }
-    });
+    }
 
     return top;
 }
@@ -115,7 +123,21 @@ function extractURLs(text) {
 }
 
 // ------------------
-// Generate image
+// 🧠 Extract TEXT (supports embeds)
+// ------------------
+function getMessageText(msg) {
+    if (msg.content && msg.content.trim().length > 0) return msg.content;
+
+    if (msg.embeds.length > 0) {
+        const e = msg.embeds[0];
+        return e.title || e.description || "Embedded message";
+    }
+
+    return "No text content";
+}
+
+// ------------------
+// IMAGE GENERATION
 // ------------------
 async function generateQuoteImage(text, username, avatarURL, serverName, nickname) {
     const width = 1000;
@@ -123,68 +145,55 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     const canvas = Canvas.createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
-    ctx.fillStyle = '#000000';
+    ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, width, height);
 
     const response = await fetch(avatarURL);
     const avatarBuffer = await response.buffer();
-    const pngBuffer = await sharp(avatarBuffer).png().toBuffer();
-    const avatar = await Canvas.loadImage(pngBuffer);
+    const avatar = await Canvas.loadImage(await sharp(avatarBuffer).png().toBuffer());
 
-    const avatarSize = height;
-    ctx.drawImage(avatar, 0, 0, avatarSize, avatarSize);
+    ctx.drawImage(avatar, 0, 0, height, height);
 
     const padding = 30;
-    const blackX = avatarSize + padding;
-    const blackY = padding;
-    const blackWidth = width - avatarSize - padding * 2;
+    const blackX = height + padding;
+    const blackWidth = width - height - padding * 2;
     const blackHeight = height - padding * 2;
 
-    // Add quotation marks
     text = `"${text}"`;
 
-    const goldenHeight = blackHeight / GOLDEN_RATIO;
-    const { lines, fontSize } = wrapTextGolden(ctx, text, blackWidth, goldenHeight, 60);
+    const { lines, fontSize } = wrapTextGolden(ctx, text, blackWidth, blackHeight / GOLDEN_RATIO, 60);
 
-    let quoteY = blackY + (blackHeight - (lines.length * fontSize * 1.2) - 100) / 2;
+    let y = padding + 20;
 
-    ctx.fillStyle = '#ffffff';
-    ctx.textBaseline = 'top';
+    ctx.fillStyle = '#fff';
 
     lines.forEach(line => {
         ctx.font = `${fontSize}px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoEmoji", "NotoMath"`;
-        const textWidth = ctx.measureText(line).width;
-        ctx.fillText(line, blackX + (blackWidth - textWidth) / 2, quoteY);
-        quoteY += fontSize * 1.2;
+        ctx.fillText(line, blackX, y);
+        y += fontSize * 1.2;
     });
 
-    // 🌈 Gradient Glow Server Name
-    const serverFont = Math.floor(fontSize * 0.4);
-
+    // 🌈 Gradient glow
     const gradient = ctx.createLinearGradient(blackX, 0, blackX + 300, 0);
-    gradient.addColorStop(0, '#d580ff'); // bright purple
-    gradient.addColorStop(1, '#6a00ff'); // dark purple
+    gradient.addColorStop(0, '#d580ff');
+    gradient.addColorStop(1, '#6a00ff');
 
-    ctx.font = `${serverFont}px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoEmoji", "NotoMath"`;
     ctx.shadowColor = '#a855f7';
     ctx.shadowBlur = 40;
     ctx.fillStyle = gradient;
 
-    ctx.fillText(`- ${serverName}`, avatarSize + padding, height - 80);
+    ctx.font = `24px "NotoSans"`;
+    ctx.fillText(`- ${serverName}`, blackX, height - 80);
 
-    // Username
-    const userFont = Math.floor(fontSize * 0.3);
     ctx.shadowBlur = 0;
-    ctx.fillStyle = '#ffffff';
-    ctx.font = `${userFont}px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoEmoji", "NotoMath"`;
-
-    ctx.fillText(`${nickname} (@${username})`, avatarSize + padding, height - 50);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(`${nickname} (@${username})`, blackX, height - 50);
 
     return canvas.toBuffer();
 }
 
 // ------------------
-// Message handler (FINAL FIXED)
+// MESSAGE HANDLER
 // ------------------
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
@@ -192,90 +201,51 @@ client.on('messageCreate', async (message) => {
     const content = message.content.toLowerCase();
     let targetMessage = null;
 
-    // 1️⃣ Reply trigger (quote OR ass)
+    // Reply trigger
     if (message.reference && WILDCARD_TRIGGERS.some(t => content.includes(t))) {
-        try {
-            targetMessage = await message.channel.messages.fetch(message.reference.messageId);
-        } catch {
-            return message.reply("Couldn't fetch the replied message.");
-        }
+        targetMessage = await message.channel.messages.fetch(message.reference.messageId);
     }
 
-    // 2️⃣ Mention trigger
+    // Mention trigger (GLOBAL SEARCH)
     else if (content.startsWith('quote') && message.mentions.users.size) {
         const user = message.mentions.users.first();
-        targetMessage = await getTopReactionMessage(message.channel, user.id);
+        targetMessage = await getTopReactionMessageGlobal(message.guild, user.id);
 
         if (!targetMessage) {
-            return message.reply("No messages with reactions found for that user.");
+            return message.reply("No messages found across server.");
         }
     }
 
-// 3️⃣ Self quote (FILTER OUT "quote")
-else if (content.startsWith('quote')) {
-    targetMessage = message;
+    // Self quote (FILTERED)
+    else if (content.startsWith('quote')) {
+        let cleaned = message.content.replace(/^quote\s*/i, '');
+        if (!cleaned.trim()) cleaned = message.content;
 
-    // Remove "quote" from the beginning (only first occurrence)
-    let cleaned = message.content.replace(/^quote\s*/i, '');
-
-    // If user typed only "quote", fallback to original message
-    if (cleaned.trim().length === 0) {
-        cleaned = message.content;
+        targetMessage = {
+            ...message,
+            content: cleaned
+        };
     }
-
-    // Override content for rendering
-    targetMessage = {
-        ...message,
-        content: cleaned
-    };
-}
 
     else return;
 
-    const linkURLs = extractURLs(targetMessage.content);
-
-    let text = targetMessage.content
-        .replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/gi, '🌐')
+    let text = getMessageText(targetMessage)
         .replace(/https?:\/\/[^\s\)]+/gi, '🌐');
 
     const user = targetMessage.author;
-    const guildMember = message.guild ? message.guild.members.cache.get(user.id) : null;
-    const nickname = guildMember ? guildMember.displayName : user.username;
-    const serverName = message.guild ? message.guild.name : 'DM';
+    const member = message.guild?.members.cache.get(user.id);
 
-    try {
-        const buffer = await generateQuoteImage(
-            text,
-            user.username,
-            user.displayAvatarURL({ format: 'png', size: 256 }),
-            serverName,
-            nickname
-        );
+    const buffer = await generateQuoteImage(
+        text,
+        user.username,
+        user.displayAvatarURL({ format: 'png', size: 256 }),
+        message.guild?.name || 'DM',
+        member?.displayName || user.username
+    );
 
-        let row = null;
-
-        if (linkURLs.length > 0) {
-            row = new ActionRowBuilder();
-
-            linkURLs.slice(0, 5).forEach(url => {
-                const button = new ButtonBuilder()
-                    .setLabel('🌐')
-                    .setStyle(ButtonStyle.Link)
-                    .setURL(url);
-
-                row.addComponents(button);
-            });
-        }
-
-        await message.channel.send({
-            files: [{ attachment: buffer, name: 'quote.png' }],
-            components: row ? [row] : []
-        });
-
-    } catch (err) {
-        console.error(err);
-        message.reply("Failed to generate quote image.");
-    }
+    await message.channel.send({
+        files: [{ attachment: buffer, name: 'quote.png' }]
+    });
 });
 
 client.login(process.env.TOKEN);
