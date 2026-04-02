@@ -211,10 +211,24 @@ client.on('messageCreate', async (message) => {
         }
     }
 
-    // 3️⃣ Self quote
-    else if (content.startsWith('quote')) {
-        targetMessage = message;
+// 3️⃣ Self quote (FILTER OUT "quote")
+else if (content.startsWith('quote')) {
+    targetMessage = message;
+
+    // Remove "quote" from the beginning (only first occurrence)
+    let cleaned = message.content.replace(/^quote\s*/i, '');
+
+    // If user typed only "quote", fallback to original message
+    if (cleaned.trim().length === 0) {
+        cleaned = message.content;
     }
+
+    // Override content for rendering
+    targetMessage = {
+        ...message,
+        content: cleaned
+    };
+}
 
     else return;
 
