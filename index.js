@@ -104,7 +104,7 @@ function extractURLs(text) {
 }
 
 // ------------------
-// Generate quote image
+// Generate quote image (updated for quotation marks and glow)
 // ------------------
 async function generateQuoteImage(text, username, avatarURL, serverName, nickname) {
     const width = 1000;
@@ -112,11 +112,11 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     const canvas = Canvas.createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
-    // Black background right side
+    // Black background
     ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, width, height);
 
-    // Avatar left side
+    // Avatar
     const response = await fetch(avatarURL);
     const avatarBuffer = await response.buffer();
     const pngBuffer = await sharp(avatarBuffer).png().toBuffer();
@@ -129,6 +129,9 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     const blackY = padding;
     const blackWidth = width - avatarSize - padding * 2;
     const blackHeight = height - padding * 2;
+
+    // Wrap the quote in quotation marks
+    text = `"${text}"`;
 
     const goldenHeight = blackHeight / GOLDEN_RATIO;
     const { lines, fontSize } = wrapTextGolden(ctx, text, blackWidth, goldenHeight, 60);
@@ -146,11 +149,11 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
         quoteY += fontSize * 1.2;
     });
 
-    // Server name
+    // Server name with stronger glow
     const serverFont = Math.floor(fontSize * 0.4);
     ctx.font = `${serverFont}px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoEmoji", "NotoMath"`;
-    ctx.shadowColor = '#8e2eff';
-    ctx.shadowBlur = 15;
+    ctx.shadowColor = '#b14eff';
+    ctx.shadowBlur = 30; // stronger glow
     ctx.fillStyle = '#d19eff';
     ctx.fillText(`- ${serverName}`, avatarSize + padding, height - 80);
 
