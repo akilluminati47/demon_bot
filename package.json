@@ -4,8 +4,9 @@
   "description": "Your Discord bot",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "postinstall": "npm rebuild canvas --build-from-source"
+  "start": "node index.js",
+  "postinstall": "npm rebuild canvas --build-from-source",
+  "prepare": "npm install"
   },
   "engines": {
     "node": "20.x"
