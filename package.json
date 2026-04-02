@@ -1,19 +1,17 @@
 {
-  "name": "quote-bot",
+  "name": "demon-bot",
   "version": "1.0.0",
-  "description": "",
+  "description": "Your Discord bot",
   "main": "index.js",
   "scripts": {
-  "postinstall": "npm rebuild canvas --build-from-source"
-}
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js",
+    "postinstall": "npm rebuild canvas --build-from-source"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
+  "engines": {
+    "node": "20.x"
+  },
   "dependencies": {
-    "canvas": "^3.2.3",
-    "discord.js": "^14.26.0",
-    "dotenv": "^17.4.0"
+    "discord.js": "^14.12.1",
+    "canvas": "^2.11.2"
   }
+}
