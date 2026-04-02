@@ -4,15 +4,13 @@
   "description": "Your Discord bot",
   "main": "index.js",
   "scripts": {
-  "start": "node index.js",
-  "postinstall": "npm rebuild canvas --build-from-source",
-  "prepare": "npm install"
-  },
-  "engines": {
-    "node": "20.x"
+    "start": "node index.js"
   },
   "dependencies": {
-    "discord.js": "^14.12.1",
-    "canvas": "^2.11.2"
+    "canvas": "^3.2.3",
+    "discord.js": "^14.26.0",
+    "dotenv": "^16.6.1",
+    "node-fetch": "^2.7.0",
+    "sharp": "^0.34.5"
   }
 }
