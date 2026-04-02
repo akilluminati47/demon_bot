@@ -6,8 +6,8 @@ const sharp = require('sharp');
 const { registerFont } = require('canvas');
 const path = require('path');
 
-// Register the Noto Sans font
-registerFont(path.join(__dirname, 'NotoSans-Regular.ttf'), { family: 'NotoSans' });
+// Register the Noto Sans font from the fonts folder
+registerFont(path.join(__dirname, 'fonts', 'noto-sans.regular.ttf'), { family: 'NotoSans' });
 
 const client = new Client({
     intents: [
@@ -19,7 +19,7 @@ const client = new Client({
     partials: [Partials.Channel, Partials.Message, Partials.Reaction]
 });
 
-client.once('clientReady', () => {
+client.once('ready', () => {
     console.log(`Logged in as ${client.user.tag}`);
 });
 
