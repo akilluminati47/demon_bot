@@ -6,9 +6,7 @@ const sharp = require('sharp');
 const { registerFont } = require('canvas');
 const path = require('path');
 
-// ------------------
 // Fonts
-// ------------------
 registerFont(path.join(__dirname, 'fonts', 'NotoSans-Regular.ttf'), { family: 'NotoSans' });
 registerFont(path.join(__dirname, 'fonts', 'NotoColorEmoji.ttf'), { family: 'NotoEmoji' });
 registerFont(path.join(__dirname, 'fonts', 'NotoSansSymbols-Regular.ttf'), { family: 'NotoSymbols' });
@@ -33,7 +31,7 @@ const GOLDEN_RATIO = 1.618;
 const WILDCARD_TRIGGERS = ['quote', 'ass'];
 
 // ------------------
-// WRAP TEXT
+// TEXT WRAP
 // ------------------
 function wrapTextGolden(ctx, text, maxWidth, maxHeight, maxFontSize) {
     let fontSize = maxFontSize;
@@ -74,7 +72,7 @@ function wrapTextGolden(ctx, text, maxWidth, maxHeight, maxFontSize) {
 }
 
 // ------------------
-// 🔥 GLOBAL SEARCH (ALL CHANNELS)
+// GLOBAL SEARCH
 // ------------------
 async function getTopReactionMessageGlobal(guild, userId) {
     let top = null;
@@ -100,33 +98,17 @@ async function getTopReactionMessageGlobal(guild, userId) {
                 }
             });
 
-        } catch {
-            continue; // skip inaccessible channels
-        }
+        } catch {}
     }
 
     return top;
 }
 
 // ------------------
-// Extract URLs
-// ------------------
-function extractURLs(text) {
-    const urls = [];
-    const raw = text.match(/https?:\/\/[^\s\)]+/gi) || [];
-    urls.push(...raw);
-
-    const md = [...text.matchAll(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/gi)];
-    md.forEach(m => urls.push(m[2]));
-
-    return urls;
-}
-
-// ------------------
-// 🧠 Extract TEXT (supports embeds)
+// EXTRACT TEXT
 // ------------------
 function getMessageText(msg) {
-    if (msg.content && msg.content.trim().length > 0) return msg.content;
+    if (msg.content?.trim()) return msg.content;
 
     if (msg.embeds.length > 0) {
         const e = msg.embeds[0];
@@ -137,20 +119,93 @@ function getMessageText(msg) {
 }
 
 // ------------------
-// IMAGE GENERATION
+// IMAGE DETECTION
 // ------------------
-async function generateQuoteImage(text, username, avatarURL, serverName, nickname) {
+function getImageFromMessage(msg) {
+    if (msg.attachments.size > 0) {
+        const att = msg.attachments.first();
+        if (att.contentType?.startsWith('image')) return att.url;
+    }
+
+    if (msg.embeds.length > 0) {
+        const e = msg.embeds[0];
+        if (e.image?.url) return e.image.url;
+        if (e.thumbnail?.url) return e.thumbnail.url;
+    }
+
+    return null;
+}
+
+// ------------------
+// BRIGHTNESS DETECTION
+// ------------------
+async function getAverageBrightness(imageBuffer) {
+    const { data } = await sharp(imageBuffer)
+        .resize(10, 10)
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+
+    let total = 0;
+
+    for (let i = 0; i < data.length; i += 3) {
+        total += (data[i] + data[i + 1] + data[i + 2]) / 3;
+    }
+
+    return total / (data.length / 3);
+}
+
+// ------------------
+// GENERATE IMAGE
+// ------------------
+async function generateQuoteImage(text, username, avatarURL, serverName, nickname, bgImageUrl) {
     const width = 1000;
     const height = 400;
+
     const canvas = Canvas.createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, width, height);
+    let textColor = '#ffffff';
 
-    const response = await fetch(avatarURL);
-    const avatarBuffer = await response.buffer();
-    const avatar = await Canvas.loadImage(await sharp(avatarBuffer).png().toBuffer());
+    // ------------------
+    // BACKGROUND
+    // ------------------
+    if (bgImageUrl) {
+        try {
+            const res = await fetch(bgImageUrl);
+            const buffer = await res.buffer();
+
+            const bg = await Canvas.loadImage(buffer);
+
+            // Blur effect
+            ctx.filter = 'blur(12px)';
+            ctx.drawImage(bg, 0, 0, width, height);
+            ctx.filter = 'none';
+
+            // Brightness detect
+            const brightness = await getAverageBrightness(buffer);
+            if (brightness > 140) textColor = '#000000';
+
+            // Gradient overlay
+            const gradient = ctx.createLinearGradient(0, 0, width, height);
+            gradient.addColorStop(0, 'rgba(106,0,255,0.6)');
+            gradient.addColorStop(1, 'rgba(213,128,255,0.6)');
+
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, width, height);
+
+        } catch {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, width, height);
+        }
+    } else {
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, width, height);
+    }
+
+    // Avatar
+    const avatar = await Canvas.loadImage(
+        await sharp(await (await fetch(avatarURL)).buffer()).png().toBuffer()
+    );
 
     ctx.drawImage(avatar, 0, 0, height, height);
 
@@ -163,17 +218,21 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
 
     const { lines, fontSize } = wrapTextGolden(ctx, text, blackWidth, blackHeight / GOLDEN_RATIO, 60);
 
-    let y = padding + 20;
+    const totalTextHeight = lines.length * fontSize * 1.2;
+    let y = padding + (blackHeight - totalTextHeight - 100) / 2;
 
-    ctx.fillStyle = '#fff';
+    ctx.fillStyle = textColor;
 
     lines.forEach(line => {
         ctx.font = `${fontSize}px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoEmoji", "NotoMath"`;
-        ctx.fillText(line, blackX, y);
+
+        const textWidth = ctx.measureText(line).width;
+        ctx.fillText(line, blackX + (blackWidth - textWidth) / 2, y);
+
         y += fontSize * 1.2;
     });
 
-    // 🌈 Gradient glow
+    // Gradient glow server name
     const gradient = ctx.createLinearGradient(blackX, 0, blackX + 300, 0);
     gradient.addColorStop(0, '#d580ff');
     gradient.addColorStop(1, '#6a00ff');
@@ -181,12 +240,11 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     ctx.shadowColor = '#a855f7';
     ctx.shadowBlur = 40;
     ctx.fillStyle = gradient;
-
     ctx.font = `24px "NotoSans"`;
     ctx.fillText(`- ${serverName}`, blackX, height - 80);
 
     ctx.shadowBlur = 0;
-    ctx.fillStyle = '#fff';
+    ctx.fillStyle = textColor;
     ctx.fillText(`${nickname} (@${username})`, blackX, height - 50);
 
     return canvas.toBuffer();
@@ -201,46 +259,43 @@ client.on('messageCreate', async (message) => {
     const content = message.content.toLowerCase();
     let targetMessage = null;
 
-    // Reply trigger
+    // Reply
     if (message.reference && WILDCARD_TRIGGERS.some(t => content.includes(t))) {
         targetMessage = await message.channel.messages.fetch(message.reference.messageId);
     }
 
-    // Mention trigger (GLOBAL SEARCH)
+    // Mention global
     else if (content.startsWith('quote') && message.mentions.users.size) {
         const user = message.mentions.users.first();
         targetMessage = await getTopReactionMessageGlobal(message.guild, user.id);
 
-        if (!targetMessage) {
-            return message.reply("No messages found across server.");
-        }
+        if (!targetMessage) return message.reply("No messages found.");
     }
 
-    // Self quote (FILTERED)
+    // Self
     else if (content.startsWith('quote')) {
         let cleaned = message.content.replace(/^quote\s*/i, '');
         if (!cleaned.trim()) cleaned = message.content;
 
-        targetMessage = {
-            ...message,
-            content: cleaned
-        };
+        targetMessage = { ...message, content: cleaned };
     }
 
     else return;
 
-    let text = getMessageText(targetMessage)
+    const text = getMessageText(targetMessage)
         .replace(/https?:\/\/[^\s\)]+/gi, '🌐');
 
     const user = targetMessage.author;
     const member = message.guild?.members.cache.get(user.id);
+    const bg = getImageFromMessage(targetMessage);
 
     const buffer = await generateQuoteImage(
         text,
         user.username,
         user.displayAvatarURL({ format: 'png', size: 256 }),
         message.guild?.name || 'DM',
-        member?.displayName || user.username
+        member?.displayName || user.username,
+        bg
     );
 
     await message.channel.send({
