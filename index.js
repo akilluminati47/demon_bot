@@ -28,12 +28,9 @@ client.once('ready', () => {
 });
 
 const WILDCARD_TRIGGERS = ['quote'];
-
-// Channels for auto reactions
 const NEWS_CHANNEL = "news-spam";
 const PLUG_CHANNEL = "twitch-youtube-plugs";
 
-// -------------------
 function wrapText(ctx, text, maxWidth, maxFontSize) {
     let fontSize = maxFontSize;
     let lines = [];
@@ -74,6 +71,11 @@ function extractURLs(text) {
     return text.match(/https?:\/\/[^\s]+/gi) || [];
 }
 
+function sanitizeLinks(text) {
+    // replace links with 🌐 emoji
+    return text.replace(/https?:\/\/[^\s]+/gi, '🌐');
+}
+
 function getMessageText(msg) {
     if (msg.content?.trim()) return msg.content;
     if (msg.embeds.length > 0) {
@@ -100,14 +102,12 @@ function extractFakeQuote(content) {
     return match ? match[1] : null;
 }
 
-// -------------------
 async function generateQuoteImage(text, username, avatarURL, serverName, nickname, imageUrl) {
     const width = 1000;
     const height = 400;
     const canvas = Canvas.createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
-    // Background
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, width, height);
 
@@ -121,7 +121,7 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     const contentX = height + padding;
     const contentWidth = width - height - padding * 2;
 
-    // Optional overlay image
+    // IMAGE
     if (imageUrl) {
         try {
             const img = await Canvas.loadImage(imageUrl);
@@ -129,16 +129,12 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
             const w = img.width * scale;
             const h = img.height * scale;
             ctx.drawImage(img, contentX + (contentWidth - w) / 2, padding + (height - padding * 2 - h) / 2, w, h);
-
-            ctx.fillStyle = 'rgba(0,0,0,0.35)';
-            ctx.fillRect(contentX, padding, contentWidth, height - padding * 2);
+            // No dark overlay
         } catch {}
     }
 
-    // Add quotation marks
-    text = `"${text}"`;
+    text = `"${text}"`; // always add quotation marks
 
-    // Text scaling and wrapping
     const { lines, fontSize } = wrapText(ctx, text, contentWidth, 60);
     const nonEmptyLines = lines.filter(l => l.trim() !== '');
     let yStart = padding + 40;
@@ -161,7 +157,7 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
         }
     }
 
-    // Metadata gradient
+    // Metadata
     const gradient = ctx.createLinearGradient(contentX, 0, contentX + 300, 0);
     gradient.addColorStop(0, '#d580ff');
     gradient.addColorStop(1, '#6a00ff');
@@ -179,7 +175,6 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     return canvas.toBuffer();
 }
 
-// -------------------
 async function getTopReactionMessageGlobal(guild, userId) {
     let top = null;
     let maxReacts = 0;
@@ -205,11 +200,9 @@ async function getTopReactionMessageGlobal(guild, userId) {
     return top;
 }
 
-// -------------------
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
-    // Auto reactions
     try {
         if (message.channel.name === NEWS_CHANNEL) {
             await message.react('plug_alert');
@@ -247,6 +240,9 @@ client.on('messageCreate', async (message) => {
         text = content.replace(/^quote\s*/i, '');
         targetUser = message.author;
     }
+
+    // sanitize links for emoji
+    text = sanitizeLinks(text);
 
     const member = message.guild?.members.cache.get(targetUser.id);
 
