@@ -22,9 +22,9 @@ Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoSansSymbols-Regular.ttf')
 Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoSansSymbols2-Regular.ttf'), { family: 'NotoSymbols2' });
 Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoSansMath-Regular.ttf'), { family: 'NotoMath' });
 
-// ---------------- Helpers ----------------
 const WILDCARD_TRIGGERS = ['quote', 'ass'];
 
+// ---------------- Helpers ----------------
 function extractURLs(text) { return text.match(/https?:\/\/[^\s]+/gi) || []; }
 function sanitizeLinks(text) { return text.replace(/https?:\/\/[^\s]+/gi, '🌐'); }
 function getMessageText(msg) {
@@ -35,17 +35,6 @@ function getMessageText(msg) {
     }
     return '';
 }
-function getImageFromMessage(msg) {
-    if (msg.attachments.size > 0) {
-        const att = msg.attachments.first();
-        if (att.contentType?.startsWith('image')) return att.url;
-    }
-    if (msg.embeds.length > 0) {
-        const e = msg.embeds[0];
-        if (e.image?.url) return e.image.url;
-    }
-    return null;
-}
 
 // ---------------- Text Wrapping ----------------
 function wrapText(ctx, text, maxWidth, maxHeight, maxFontSize) {
@@ -54,7 +43,7 @@ function wrapText(ctx, text, maxWidth, maxHeight, maxFontSize) {
     const paragraphs = text.split(/\r?\n/);
 
     while (fontSize > 10) {
-        ctx.font = `${fontSize}px "NotoSans", "NotoEmoji", "NotoSymbols", "NotoMath"`;
+        ctx.font = `${fontSize}px "NotoSans", "NotoEmoji"`;
         lines = [];
         for (let para of paragraphs) {
             if (!para.trim()) { lines.push(''); continue; }
@@ -62,25 +51,21 @@ function wrapText(ctx, text, maxWidth, maxHeight, maxFontSize) {
             let line = '';
             for (let word of words) {
                 if (ctx.measureText(word).width > maxWidth) {
-                    // Hyphen break long word
+                    // Hyphenation
                     let part = '';
                     for (let c of word) {
                         if (ctx.measureText(part + c + '-').width > maxWidth) {
                             lines.push(part + '-');
                             part = c;
-                        } else {
-                            part += c;
-                        }
+                        } else { part += c; }
                     }
-                    if (part) line = part + ' ';
+                    line = part + ' ';
                 } else {
                     let test = line + word + ' ';
                     if (ctx.measureText(test).width > maxWidth) {
                         if (line) lines.push(line.trim());
                         line = word + ' ';
-                    } else {
-                        line = test;
-                    }
+                    } else { line = test; }
                 }
             }
             if (line) lines.push(line.trim());
@@ -95,12 +80,13 @@ function wrapText(ctx, text, maxWidth, maxHeight, maxFontSize) {
 }
 
 // ---------------- Generate Quote Image ----------------
-async function generateQuoteImage(text, username, avatarURL, serverName, nickname, imageUrl) {
+async function generateQuoteImage(text, username, avatarURL, serverName, nickname) {
     const width = 1000;
     const height = 400;
     const padding = 40;
     const metadataHeight = 80;
     const topPadding = 30;
+
     const canvas = Canvas.createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
@@ -117,26 +103,14 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     const contentWidth = width - height - padding * 2;
     const contentHeight = height - padding * 2 - metadataHeight;
 
-    // Image overlay (no darkening)
-    if (imageUrl) {
-        try {
-            const img = await Canvas.loadImage(imageUrl);
-            const scale = Math.min(contentWidth / img.width, contentHeight / img.height);
-            const w = img.width * scale;
-            const h = img.height * scale;
-            ctx.drawImage(img, contentX + (contentWidth - w) / 2, padding + (contentHeight - h) / 2, w, h);
-        } catch {}
-    }
-
-    // Text overlay
+    // Text
     text = text ? `"${sanitizeLinks(text)}"` : '';
     const { lines, fontSize } = wrapText(ctx, text, contentWidth, contentHeight, 60);
 
-    let yStart = padding + topPadding;
+    // Vertical centering for one-liners
     const nonEmptyLines = lines.filter(l => l.trim() !== '');
     const totalTextHeight = nonEmptyLines.length * fontSize * 1.2;
-
-    // Vertical centering for short content
+    let yStart = padding + topPadding;
     if (totalTextHeight < contentHeight) yStart += (contentHeight - totalTextHeight) / 2;
 
     ctx.fillStyle = '#fff';
@@ -148,7 +122,7 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     }
 
     // Metadata
-    const isBot = nickname.toLowerCase() === username.toLowerCase(); // if bot, show nickname only
+    const isBot = nickname.toLowerCase() === username.toLowerCase(); // display nickname for bots
     ctx.font = '24px "NotoSans"';
     ctx.fillStyle = '#d580ff';
     ctx.fillText(`- ${serverName}`, contentX, height - 70);
@@ -166,6 +140,26 @@ async function autoReact(message) {
     } else if (message.channel.name === 'twitch-youtube-plugs') {
         await message.react('🔌'); // plug_alert
     }
+}
+
+// ---------------- Top Reaction ----------------
+async function getTopReactionMessageGlobal(guild, userId) {
+    let top = null, maxReacts = 0;
+    const channels = await guild.channels.fetch();
+    for (const [, channel] of channels) {
+        if (!channel.isTextBased()) continue;
+        try {
+            const messages = await channel.messages.fetch({ limit: 50 });
+            messages.forEach(msg => {
+                if (msg.author.id === userId && msg.reactions.cache.size) {
+                    let count = 0;
+                    msg.reactions.cache.forEach(r => count += r.count);
+                    if (count > maxReacts) { maxReacts = count; top = msg; }
+                }
+            });
+        } catch {}
+    }
+    return top;
 }
 
 // ---------------- Message Handler ----------------
@@ -197,7 +191,6 @@ client.on('messageCreate', async (message) => {
     } else return;
 
     const text = getMessageText(targetMessage);
-    const image = getImageFromMessage(targetMessage);
     const linkURLs = extractURLs(text);
 
     const buffer = await generateQuoteImage(
@@ -205,8 +198,7 @@ client.on('messageCreate', async (message) => {
         targetMessage.author.username,
         targetMessage.author.displayAvatarURL({ format: 'png', size: 256 }),
         message.guild?.name || 'DM',
-        message.guild?.members.cache.get(targetMessage.author.id)?.displayName || targetMessage.author.username,
-        image
+        message.guild?.members.cache.get(targetMessage.author.id)?.displayName || targetMessage.author.username
     );
 
     // Buttons
@@ -224,24 +216,5 @@ client.on('messageCreate', async (message) => {
     await message.channel.send({ files: [{ attachment: buffer, name: 'quote.png' }], components });
     try { await message.delete(); } catch {}
 });
-
-async function getTopReactionMessageGlobal(guild, userId) {
-    let top = null, maxReacts = 0;
-    const channels = await guild.channels.fetch();
-    for (const [, channel] of channels) {
-        if (!channel.isTextBased()) continue;
-        try {
-            const messages = await channel.messages.fetch({ limit: 50 });
-            messages.forEach(msg => {
-                if (msg.author.id === userId && msg.reactions.cache.size) {
-                    let count = 0;
-                    msg.reactions.cache.forEach(r => count += r.count);
-                    if (count > maxReacts) { maxReacts = count; top = msg; }
-                }
-            });
-        } catch {}
-    }
-    return top;
-}
 
 client.login(process.env.TOKEN);

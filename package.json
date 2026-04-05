@@ -1,11 +1,11 @@
 {
   "name": "demon-bot",
-  "version": "1.7.0",
-  "description": "Discord bot with robust quote scaling and emoji support",
+  "version": "1.8.0",
+  "description": "Discord quote bot with emoji support and false quotes",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "deploy": "git add .; if (-not (git diff --cached --quiet)) { git commit -m \"Update quote bot - scaling, spacing, false quote fix - $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')\"; git push origin main } else { Write-Host 'No changes to commit' }"
+    "deploy": "git add .; if (-not (git diff --cached --quiet)) { git commit -m \"Update quote bot - fixes false quote, scaling, emoji - $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')\"; git push origin main } else { Write-Host 'No changes to commit' }"
   },
   "dependencies": {
     "canvas": "^3.2.3",
