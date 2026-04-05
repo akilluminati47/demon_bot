@@ -15,7 +15,7 @@ const client = new Client({
     partials: [Partials.Channel, Partials.Message, Partials.Reaction]
 });
 
-// -------- Fonts (UNCHANGED per your request)
+// -------- Fonts
 Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoSans-Regular.ttf'), { family: 'NotoSans' });
 Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoEmoji-Regular.ttf'), { family: 'NotoEmoji' });
 Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoSansSymbols-Regular.ttf'), { family: 'NotoSymbols' });
@@ -45,7 +45,7 @@ function getImageFromMessage(msg) {
     return null;
 }
 
-// -------- RESTORED FUNCTION (FIX)
+// -------- Top Reaction Fetch
 async function getTopReactionMessageGlobal(guild, userId) {
     let top = null;
     let maxReacts = 0;
@@ -57,7 +57,6 @@ async function getTopReactionMessageGlobal(guild, userId) {
 
         try {
             const messages = await channel.messages.fetch({ limit: 50 });
-
             messages.forEach(msg => {
                 if (msg.author.id === userId && msg.reactions.cache.size) {
                     let count = 0;
@@ -75,41 +74,46 @@ async function getTopReactionMessageGlobal(guild, userId) {
     return top;
 }
 
-// -------- TEXT WRAP
+// -------- Text Wrap with line break support
 function wrapText(ctx, text, maxWidth, maxHeight, maxFontSize) {
     let fontSize = maxFontSize;
     let lines = [];
+
+    // sanitize excessive line breaks (no more than 2 consecutive)
+    text = text.replace(/\n{3,}/g, '\n\n');
 
     while (fontSize > 12) {
         ctx.font = `${fontSize}px "NotoSans", "NotoEmoji", "NotoSymbols", "NotoSymbols2", "NotoMath"`;
         lines = [];
 
-        let words = text.split(' ');
-        let line = '';
+        const paragraphs = text.split('\n');
+        for (let para of paragraphs) {
+            let words = para.split(' ');
+            let line = '';
 
-        for (let word of words) {
-            if (ctx.measureText(word).width > maxWidth) {
-                let part = '';
-                for (let c of word) {
-                    if (ctx.measureText(part + c + '-').width > maxWidth) {
-                        lines.push(part + '-');
-                        part = c;
-                    } else part += c;
+            for (let word of words) {
+                if (ctx.measureText(word).width > maxWidth) {
+                    let part = '';
+                    for (let c of word) {
+                        if (ctx.measureText(part + c + '-').width > maxWidth) {
+                            lines.push(part + '-');
+                            part = c;
+                        } else part += c;
+                    }
+                    line = part + ' ';
+                    continue;
                 }
-                line = part + ' ';
-                continue;
-            }
 
-            let test = line + word + ' ';
-            if (ctx.measureText(test).width > maxWidth) {
-                lines.push(line.trim());
-                line = word + ' ';
-            } else {
-                line = test;
+                let test = line + word + ' ';
+                if (ctx.measureText(test).width > maxWidth) {
+                    lines.push(line.trim());
+                    line = word + ' ';
+                } else {
+                    line = test;
+                }
             }
+            if (line) lines.push(line.trim());
         }
-
-        if (line) lines.push(line.trim());
 
         let height = lines.length * fontSize * 1.2;
         if (height <= maxHeight) break;
@@ -120,8 +124,8 @@ function wrapText(ctx, text, maxWidth, maxHeight, maxFontSize) {
     return { lines, fontSize };
 }
 
-// -------- IMAGE GENERATION
-async function generateQuoteImage(text, username, avatarURL, serverName, nickname, imageUrl) {
+// -------- Image Generation
+async function generateQuoteImage(text, username, avatarURL, serverName, displayName, imageUrl) {
     const width = 1000;
     const height = 400;
     const padding = 50;
@@ -146,44 +150,24 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     if (imageUrl) {
         try {
             const img = await Canvas.loadImage(imageUrl);
-
-            const scale = Math.min(
-                contentWidth / img.width,
-                contentHeight / img.height
-            );
-
+            const scale = Math.min(contentWidth / img.width, contentHeight / img.height);
             const w = img.width * scale;
             const h = img.height * scale;
-
-            ctx.drawImage(
-                img,
-                contentX + (contentWidth - w) / 2,
-                padding + (contentHeight - h) / 2,
-                w,
-                h
-            );
+            ctx.drawImage(img, contentX + (contentWidth - w) / 2, padding + (contentHeight - h) / 2, w, h);
         } catch {}
     } else {
         text = `"${sanitizeLinks(text)}"`;
         const { lines, fontSize } = wrapText(ctx, text, contentWidth, contentHeight, 64);
 
         ctx.fillStyle = '#fff';
-
         if (lines.length === 1) {
             let size = fontSize + 14;
             ctx.font = `${size}px "NotoSans", "NotoEmoji", "NotoSymbols", "NotoSymbols2", "NotoMath"`;
-
             const textWidth = ctx.measureText(lines[0]).width;
-
-            ctx.fillText(
-                lines[0],
-                contentX + (contentWidth - textWidth) / 2,
-                height / 2 + size / 3
-            );
+            ctx.fillText(lines[0], contentX + (contentWidth - textWidth) / 2, height / 2 + size / 3);
         } else {
             let totalHeight = lines.length * fontSize * 1.2;
             let y = padding + (contentHeight - totalHeight) / 2;
-
             for (let line of lines) {
                 ctx.font = `${fontSize}px "NotoSans", "NotoEmoji", "NotoSymbols", "NotoSymbols2", "NotoMath"`;
                 ctx.fillText(line, contentX, y + fontSize);
@@ -198,7 +182,6 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     ctx.fillText(`- ${serverName}`, contentX, height - 70);
 
     ctx.fillStyle = '#fff';
-    const displayName = nickname || username;
     ctx.fillText(`${displayName} (@${username})`, contentX, height - 40);
 
     return canvas.toBuffer();
@@ -211,8 +194,8 @@ client.on('messageCreate', async (message) => {
     let target = null;
     const content = message.content.trim().toLowerCase();
 
-    // FALSE QUOTE (FIXED STRING)
-    const match = message.content.match(/^quote\s+<@!?(\d+)>\s+"([\s\S]+)"$/i);
+    // FALSE QUOTE (updated)
+    const match = message.content.match(/^quote\s+<@!?(\d+)>\s*"?([\s\S]+?)"?$/i);
     if (match) {
         try {
             const user = await message.guild.members.fetch(match[1]);
@@ -237,6 +220,10 @@ client.on('messageCreate', async (message) => {
         target = { ...message, content: txt };
     } else return;
 
+    // Ensure we get displayName from server nickname
+    const member = message.guild?.members.cache.get(target.author.id) || await message.guild?.members.fetch(target.author.id).catch(() => null);
+    const displayName = member?.displayName || target.author.username;
+
     const image = getImageFromMessage(target);
     const links = extractURLs(target.content);
 
@@ -245,7 +232,7 @@ client.on('messageCreate', async (message) => {
         target.author.username,
         target.author.displayAvatarURL({ format: 'png', size: 256 }),
         message.guild?.name || 'DM',
-        message.guild?.members.cache.get(target.author.id)?.displayName,
+        displayName,
         image
     );
 
