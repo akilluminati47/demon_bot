@@ -6,7 +6,6 @@ const sharp = require('sharp');
 const { registerFont } = require('canvas');
 const path = require('path');
 
-// -------------------
 // Fonts
 registerFont(path.join(__dirname, 'fonts', 'NotoSans-Regular.ttf'), { family: 'NotoSans' });
 registerFont(path.join(__dirname, 'fonts', 'NotoColorEmoji.ttf'), { family: 'NotoEmoji' });
@@ -30,13 +29,11 @@ client.once('ready', () => {
 
 const WILDCARD_TRIGGERS = ['quote'];
 
-// -------------------
 // Channels for auto reactions
 const NEWS_CHANNEL = "news-spam";
 const PLUG_CHANNEL = "twitch-youtube-plugs";
 
 // -------------------
-// Text helper functions
 function wrapText(ctx, text, maxWidth, maxFontSize) {
     let fontSize = maxFontSize;
     let lines = [];
@@ -138,12 +135,14 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
         } catch {}
     }
 
-    // Text
+    // Add quotation marks
+    text = `"${text}"`;
+
+    // Text scaling and wrapping
     const { lines, fontSize } = wrapText(ctx, text, contentWidth, 60);
     const nonEmptyLines = lines.filter(l => l.trim() !== '');
     let yStart = padding + 40;
 
-    // Centered single-line
     if (nonEmptyLines.length === 1) {
         const singleLine = nonEmptyLines[0];
         ctx.font = `${fontSize + 10}px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoEmoji", "NotoMath"`;
@@ -154,6 +153,7 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     } else {
         let y = yStart;
         ctx.fillStyle = '#fff';
+        ctx.textAlign = 'left';
         for (const line of lines) {
             ctx.font = `${fontSize}px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoEmoji", "NotoMath"`;
             ctx.fillText(line, contentX, y);
@@ -209,7 +209,6 @@ async function getTopReactionMessageGlobal(guild, userId) {
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
-    // -------------------
     // Auto reactions
     try {
         if (message.channel.name === NEWS_CHANNEL) {
@@ -224,14 +223,12 @@ client.on('messageCreate', async (message) => {
 
     if (!content.toLowerCase().startsWith('quote')) return;
 
-    // -------------------
     let fakeQuote = extractFakeQuote(content);
     let targetUser = null;
     let text = null;
     let image = null;
 
     if (fakeQuote) {
-        // False quote mode
         if (message.mentions.users.size) targetUser = message.mentions.users.first();
         else if (message.reference) {
             const replied = await message.channel.messages.fetch(message.reference.messageId);
@@ -262,8 +259,7 @@ client.on('messageCreate', async (message) => {
         image
     );
 
-    // -------------------
-    // Hyperlink buttons
+    // Hyperlink buttons with 🌐 emoji only
     const linkURLs = extractURLs(text);
     let components = [];
     if (linkURLs.length > 0) {
