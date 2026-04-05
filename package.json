@@ -1,11 +1,11 @@
 {
   "name": "demon-bot",
-  "version": "1.4.0",
-  "description": "Discord quote bot with fake quotes, image overlay, auto reactions, metadata, and hyperlink buttons",
+  "version": "1.5.0",
+  "description": "Discord bot with quote images",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "deploy": "powershell -Command \"if ((git diff --cached --quiet) -eq $false) { Write-Host 'No changes to commit' } else { git commit -m \\\"Update bot features - $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')\\\"; git push origin main }\""
+    "deploy": "git add .; if (-not (git diff --cached --quiet)) { git commit -m \"Update quote bot - spacing & emoji fix - $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')\"; git push origin main } else { Write-Host 'No changes to commit' }"
   },
   "dependencies": {
     "canvas": "^3.2.3",

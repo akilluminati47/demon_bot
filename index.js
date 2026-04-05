@@ -16,19 +16,11 @@ const client = new Client({
 });
 
 // ---------------- Fonts ----------------
-function registerFonts() {
-    try {
-        Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoSans-Regular.ttf'), { family: 'NotoSans' });
-        Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoSansSymbols-Regular.ttf'), { family: 'NotoSymbols' });
-        Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoSansSymbols2-Regular.ttf'), { family: 'NotoSymbols2' });
-        Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoSansMath-Regular.ttf'), { family: 'NotoMath' });
-        // Windows color emoji fallback
-        Canvas.registerFont('C:\\Windows\\Fonts\\seguiemj.ttf', { family: 'SegoeEmoji' });
-    } catch (err) {
-        console.warn("Font load failed, fallback system fonts will be used:", err.message);
-    }
-}
-registerFonts();
+Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoSans-Regular.ttf'), { family: 'NotoSans' });
+Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoColorEmoji.ttf'), { family: 'NotoEmoji' });
+Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoSansSymbols-Regular.ttf'), { family: 'NotoSymbols' });
+Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoSansSymbols2-Regular.ttf'), { family: 'NotoSymbols2' });
+Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoSansMath-Regular.ttf'), { family: 'NotoMath' });
 
 // ---------------- Helpers ----------------
 const WILDCARD_TRIGGERS = ['quote', 'ass'];
@@ -61,7 +53,7 @@ function wrapText(ctx, text, maxWidth, maxHeight, maxFontSize) {
     let lines = [];
 
     while (fontSize > 10) {
-        ctx.font = `${fontSize}px "NotoSans", "SegoeEmoji", "NotoSymbols", "NotoSymbols2", "NotoMath"`;
+        ctx.font = `${fontSize}px "NotoSans", "NotoEmoji", "NotoSymbols", "NotoMath"`;
         lines = [];
         const paragraphs = text.split(/\r?\n/);
         let fits = true;
@@ -95,6 +87,7 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     const width = 1000;
     const height = 400;
     const padding = 40;
+    const metadataHeight = 80;
     const canvas = Canvas.createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
@@ -108,8 +101,8 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     ctx.drawImage(avatarImg, 0, 0, height, height);
 
     const contentX = height + padding;
-    const contentWidth = width - height - padding * 2;
-    const contentHeight = height - padding * 2 - 80; // leave 80px for metadata
+    const contentWidth = width - height - padding*2;
+    const contentHeight = height - padding*2 - metadataHeight;
 
     // Image overlay (no darkening)
     if (imageUrl) {
@@ -118,7 +111,7 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
             const scale = Math.min(contentWidth / img.width, contentHeight / img.height);
             const w = img.width * scale;
             const h = img.height * scale;
-            ctx.drawImage(img, contentX + (contentWidth - w) / 2, padding + (contentHeight - h) / 2, w, h);
+            ctx.drawImage(img, contentX + (contentWidth - w)/2, padding + (contentHeight - h)/2, w, h);
         } catch {}
     }
 
@@ -127,19 +120,19 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     const { lines, fontSize } = wrapText(ctx, text, contentWidth, contentHeight, 60);
 
     const nonEmptyLines = lines.filter(l => l.trim() !== '');
-    let y = padding;
+    let y = padding + 20; // top padding for visual spacing
 
     if (nonEmptyLines.length === 1) {
-        ctx.font = `${fontSize + 10}px "NotoSans", "SegoeEmoji"`;
+        ctx.font = `${fontSize + 10}px "NotoSans", "NotoEmoji"`;
         const textWidth = ctx.measureText(nonEmptyLines[0]).width;
         ctx.fillStyle = '#fff';
-        ctx.fillText(nonEmptyLines[0], contentX + (contentWidth - textWidth) / 2, height / 2);
+        ctx.fillText(nonEmptyLines[0], contentX + (contentWidth - textWidth)/2, height/2);
     } else {
         ctx.fillStyle = '#fff';
         for (const line of lines) {
-            ctx.font = `${fontSize}px "NotoSans", "SegoeEmoji"`;
+            ctx.font = `${fontSize}px "NotoSans", "NotoEmoji"`;
             ctx.fillText(line, contentX, y);
-            y += fontSize * 1.2;
+            y += fontSize*1.2;
         }
     }
 
