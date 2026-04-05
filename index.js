@@ -15,14 +15,14 @@ const client = new Client({
     partials: [Partials.Channel, Partials.Message, Partials.Reaction]
 });
 
-// ----------------- Fonts -----------------
+// ---------------- Fonts ----------------
 function registerFonts() {
     try {
         Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoSans-Regular.ttf'), { family: 'NotoSans' });
         Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoSansSymbols-Regular.ttf'), { family: 'NotoSymbols' });
         Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoSansSymbols2-Regular.ttf'), { family: 'NotoSymbols2' });
         Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoSansMath-Regular.ttf'), { family: 'NotoMath' });
-        // For Windows emojis fallback
+        // Windows color emoji fallback
         Canvas.registerFont('C:\\Windows\\Fonts\\seguiemj.ttf', { family: 'SegoeEmoji' });
     } catch (err) {
         console.warn("Font load failed, fallback system fonts will be used:", err.message);
@@ -30,36 +30,8 @@ function registerFonts() {
 }
 registerFonts();
 
-// ----------------- Helpers -----------------
+// ---------------- Helpers ----------------
 const WILDCARD_TRIGGERS = ['quote', 'ass'];
-
-function wrapText(ctx, text, maxWidth, maxFontSize) {
-    let fontSize = maxFontSize;
-    let lines = [];
-    const paragraphs = text.split(/\r?\n/);
-
-    while (fontSize > 10) {
-        ctx.font = `${fontSize}px "NotoSans", "NotoSymbols", "NotoSymbols2", "SegoeEmoji", "NotoMath"`;
-        lines = [];
-        for (const para of paragraphs) {
-            if (!para.trim()) { lines.push(''); continue; }
-            const words = para.split(' ');
-            let line = '';
-            for (const word of words) {
-                const test = line + word + ' ';
-                if (ctx.measureText(test).width > maxWidth) {
-                    if (line) lines.push(line.trim());
-                    line = word + ' ';
-                } else { line = test; }
-            }
-            if (line) lines.push(line.trim());
-        }
-        const totalHeight = lines.length * fontSize * 1.2;
-        if (totalHeight <= 250) break;
-        fontSize -= 2;
-    }
-    return { lines, fontSize };
-}
 
 function extractURLs(text) { return text.match(/https?:\/\/[^\s]+/gi) || []; }
 function sanitizeLinks(text) { return text.replace(/https?:\/\/[^\s]+/gi, '🌐'); }
@@ -83,10 +55,46 @@ function getImageFromMessage(msg) {
     return null;
 }
 
-// ----------------- Generate Quote Image -----------------
+// ---------------- Text Wrapping ----------------
+function wrapText(ctx, text, maxWidth, maxHeight, maxFontSize) {
+    let fontSize = maxFontSize;
+    let lines = [];
+
+    while (fontSize > 10) {
+        ctx.font = `${fontSize}px "NotoSans", "SegoeEmoji", "NotoSymbols", "NotoSymbols2", "NotoMath"`;
+        lines = [];
+        const paragraphs = text.split(/\r?\n/);
+        let fits = true;
+
+        for (const para of paragraphs) {
+            if (!para.trim()) { lines.push(''); continue; }
+            const words = para.split(' ');
+            let line = '';
+            for (const word of words) {
+                const test = line + word + ' ';
+                if (ctx.measureText(test).width > maxWidth) {
+                    if (line) lines.push(line.trim());
+                    line = word + ' ';
+                } else {
+                    line = test;
+                }
+            }
+            if (line) lines.push(line.trim());
+        }
+
+        const totalHeight = lines.length * fontSize * 1.2;
+        if (totalHeight <= maxHeight) break;
+        fontSize -= 2;
+    }
+
+    return { lines, fontSize };
+}
+
+// ---------------- Generate Quote Image ----------------
 async function generateQuoteImage(text, username, avatarURL, serverName, nickname, imageUrl) {
     const width = 1000;
     const height = 400;
+    const padding = 40;
     const canvas = Canvas.createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
@@ -99,46 +107,44 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     const avatarImg = await Canvas.loadImage(await sharp(avatarBuffer).png().toBuffer());
     ctx.drawImage(avatarImg, 0, 0, height, height);
 
-    const padding = 40;
     const contentX = height + padding;
     const contentWidth = width - height - padding * 2;
+    const contentHeight = height - padding * 2 - 80; // leave 80px for metadata
 
     // Image overlay (no darkening)
     if (imageUrl) {
         try {
             const img = await Canvas.loadImage(imageUrl);
-            const scale = Math.min(contentWidth / img.width, (height - padding * 2) / img.height);
+            const scale = Math.min(contentWidth / img.width, contentHeight / img.height);
             const w = img.width * scale;
             const h = img.height * scale;
-            ctx.drawImage(img, contentX + (contentWidth - w) / 2, padding + (height - padding * 2 - h) / 2, w, h);
+            ctx.drawImage(img, contentX + (contentWidth - w) / 2, padding + (contentHeight - h) / 2, w, h);
         } catch {}
     }
 
     // Text overlay
     text = text ? `"${sanitizeLinks(text)}"` : '';
-    const { lines, fontSize } = wrapText(ctx, text, contentWidth, 60);
+    const { lines, fontSize } = wrapText(ctx, text, contentWidth, contentHeight, 60);
 
     const nonEmptyLines = lines.filter(l => l.trim() !== '');
-    let yStart = padding + 40;
+    let y = padding;
 
     if (nonEmptyLines.length === 1) {
-        ctx.font = `${fontSize + 10}px "NotoSans", "NotoSymbols", "NotoSymbols2", "SegoeEmoji", "NotoMath"`;
+        ctx.font = `${fontSize + 10}px "NotoSans", "SegoeEmoji"`;
         const textWidth = ctx.measureText(nonEmptyLines[0]).width;
-        yStart = height / 2 - (fontSize + 10) / 2;
         ctx.fillStyle = '#fff';
-        ctx.fillText(nonEmptyLines[0], contentX + (contentWidth - textWidth) / 2, yStart);
+        ctx.fillText(nonEmptyLines[0], contentX + (contentWidth - textWidth) / 2, height / 2);
     } else {
-        let y = yStart;
         ctx.fillStyle = '#fff';
         for (const line of lines) {
-            ctx.font = `${fontSize}px "NotoSans", "NotoSymbols", "NotoSymbols2", "SegoeEmoji", "NotoMath"`;
+            ctx.font = `${fontSize}px "NotoSans", "SegoeEmoji"`;
             ctx.fillText(line, contentX, y);
             y += fontSize * 1.2;
         }
     }
 
     // Metadata
-    ctx.font = `24px "NotoSans"`;
+    ctx.font = '24px "NotoSans"';
     ctx.fillStyle = '#d580ff';
     ctx.fillText(`- ${serverName}`, contentX, height - 70);
     ctx.fillStyle = '#fff';
@@ -147,7 +153,7 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     return canvas.toBuffer();
 }
 
-// ----------------- Auto Reactions -----------------
+// ---------------- Auto React ----------------
 async function autoReact(message) {
     if (message.channel.name === 'news-spam') {
         await message.react('🔌'); // plug_alert
@@ -157,7 +163,7 @@ async function autoReact(message) {
     }
 }
 
-// ----------------- Message Handler -----------------
+// ---------------- Message Handler ----------------
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
     autoReact(message).catch(() => {});
@@ -190,29 +196,24 @@ client.on('messageCreate', async (message) => {
         image
     );
 
-    // Buttons for links
+    // Buttons
     let components = [];
     if (linkURLs.length > 0) {
         const row = new ActionRowBuilder();
         linkURLs.slice(0, 5).forEach(url => {
             row.addComponents(
-                new ButtonBuilder()
-                    .setLabel('🌐')
-                    .setStyle(ButtonStyle.Link)
-                    .setURL(url)
+                new ButtonBuilder().setLabel('🌐').setStyle(ButtonStyle.Link).setURL(url)
             );
         });
         components.push(row);
     }
 
     await message.channel.send({ files: [{ attachment: buffer, name: 'quote.png' }], components });
-
     try { await message.delete(); } catch {}
 });
 
 async function getTopReactionMessageGlobal(guild, userId) {
-    let top = null;
-    let maxReacts = 0;
+    let top = null, maxReacts = 0;
     const channels = await guild.channels.fetch();
     for (const [, channel] of channels) {
         if (!channel.isTextBased()) continue;
@@ -222,10 +223,7 @@ async function getTopReactionMessageGlobal(guild, userId) {
                 if (msg.author.id === userId && msg.reactions.cache.size) {
                     let count = 0;
                     msg.reactions.cache.forEach(r => count += r.count);
-                    if (count > maxReacts) {
-                        maxReacts = count;
-                        top = msg;
-                    }
+                    if (count > maxReacts) { maxReacts = count; top = msg; }
                 }
             });
         } catch {}
