@@ -51,23 +51,36 @@ function getImageFromMessage(msg) {
 function wrapText(ctx, text, maxWidth, maxHeight, maxFontSize) {
     let fontSize = maxFontSize;
     let lines = [];
+    const paragraphs = text.split(/\r?\n/);
 
     while (fontSize > 10) {
         ctx.font = `${fontSize}px "NotoSans", "NotoEmoji", "NotoSymbols", "NotoMath"`;
         lines = [];
-        const paragraphs = text.split(/\r?\n/);
-
-        for (const para of paragraphs) {
+        for (let para of paragraphs) {
             if (!para.trim()) { lines.push(''); continue; }
-            const words = para.split(' ');
+            let words = para.split(' ');
             let line = '';
-            for (const word of words) {
-                const test = line + word + ' ';
-                if (ctx.measureText(test).width > maxWidth) {
-                    if (line) lines.push(line.trim());
-                    line = word + ' ';
+            for (let word of words) {
+                if (ctx.measureText(word).width > maxWidth) {
+                    // Hyphen break long word
+                    let part = '';
+                    for (let c of word) {
+                        if (ctx.measureText(part + c + '-').width > maxWidth) {
+                            lines.push(part + '-');
+                            part = c;
+                        } else {
+                            part += c;
+                        }
+                    }
+                    if (part) line = part + ' ';
                 } else {
-                    line = test;
+                    let test = line + word + ' ';
+                    if (ctx.measureText(test).width > maxWidth) {
+                        if (line) lines.push(line.trim());
+                        line = word + ' ';
+                    } else {
+                        line = test;
+                    }
                 }
             }
             if (line) lines.push(line.trim());
@@ -87,7 +100,7 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     const height = 400;
     const padding = 40;
     const metadataHeight = 80;
-    const topOffset = 30; // lower field from top for large quotes
+    const topPadding = 30;
     const canvas = Canvas.createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
@@ -119,36 +132,28 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     text = text ? `"${sanitizeLinks(text)}"` : '';
     const { lines, fontSize } = wrapText(ctx, text, contentWidth, contentHeight, 60);
 
+    let yStart = padding + topPadding;
     const nonEmptyLines = lines.filter(l => l.trim() !== '');
-    let totalTextHeight = nonEmptyLines.length * fontSize * 1.2;
-    let yStart = padding + topOffset;
+    const totalTextHeight = nonEmptyLines.length * fontSize * 1.2;
 
-    // Vertical centering tweak for short quotes
-    if (totalTextHeight < contentHeight) {
-        yStart += (contentHeight - totalTextHeight) / 2;
-    }
+    // Vertical centering for short content
+    if (totalTextHeight < contentHeight) yStart += (contentHeight - totalTextHeight) / 2;
 
-    if (nonEmptyLines.length === 1) {
-        ctx.font = `${fontSize + 10}px "NotoSans", "NotoEmoji"`;
-        const textWidth = ctx.measureText(nonEmptyLines[0]).width;
-        ctx.fillStyle = '#fff';
-        ctx.fillText(nonEmptyLines[0], contentX + (contentWidth - textWidth) / 2, yStart + fontSize);
-    } else {
-        ctx.fillStyle = '#fff';
-        let y = yStart;
-        for (const line of lines) {
-            ctx.font = `${fontSize}px "NotoSans", "NotoEmoji"`;
-            ctx.fillText(line, contentX, y + fontSize);
-            y += fontSize * 1.2;
-        }
+    ctx.fillStyle = '#fff';
+    let y = yStart;
+    for (let line of lines) {
+        ctx.font = `${fontSize}px "NotoSans", "NotoEmoji"`;
+        ctx.fillText(line, contentX, y + fontSize);
+        y += fontSize * 1.2;
     }
 
     // Metadata
+    const isBot = nickname.toLowerCase() === username.toLowerCase(); // if bot, show nickname only
     ctx.font = '24px "NotoSans"';
     ctx.fillStyle = '#d580ff';
     ctx.fillText(`- ${serverName}`, contentX, height - 70);
     ctx.fillStyle = '#fff';
-    ctx.fillText(`${nickname} (@${username})`, contentX, height - 40);
+    ctx.fillText(`${isBot ? nickname : nickname} (@${username})`, contentX, height - 40);
 
     return canvas.toBuffer();
 }
@@ -178,10 +183,7 @@ client.on('messageCreate', async (message) => {
         const fakeText = falseQuoteMatch[2];
         const user = await message.guild.members.fetch(userId);
         if (!user) return;
-        targetMessage = {
-            author: user.user,
-            content: fakeText
-        };
+        targetMessage = { author: user.user, content: fakeText };
     } else if (message.reference && WILDCARD_TRIGGERS.some(t => content.toLowerCase().includes(t))) {
         targetMessage = await message.channel.messages.fetch(message.reference.messageId);
     } else if (content.toLowerCase().startsWith('quote') && message.mentions.users.size) {
