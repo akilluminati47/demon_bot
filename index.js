@@ -17,7 +17,7 @@ const client = new Client({
 
 // ---------------- Fonts ----------------
 Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoSans-Regular.ttf'), { family: 'NotoSans' });
-Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoColorEmoji.ttf'), { family: 'NotoEmoji' });
+Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoColorEmoji-Regular.ttf'), { family: 'NotoEmoji' });
 Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoSansSymbols-Regular.ttf'), { family: 'NotoSymbols' });
 Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoSansSymbols2-Regular.ttf'), { family: 'NotoSymbols2' });
 Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoSansMath-Regular.ttf'), { family: 'NotoMath' });
@@ -56,7 +56,6 @@ function wrapText(ctx, text, maxWidth, maxHeight, maxFontSize) {
         ctx.font = `${fontSize}px "NotoSans", "NotoEmoji", "NotoSymbols", "NotoMath"`;
         lines = [];
         const paragraphs = text.split(/\r?\n/);
-        let fits = true;
 
         for (const para of paragraphs) {
             if (!para.trim()) { lines.push(''); continue; }
@@ -88,6 +87,7 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     const height = 400;
     const padding = 40;
     const metadataHeight = 80;
+    const topOffset = 30; // lower field from top for large quotes
     const canvas = Canvas.createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
@@ -101,8 +101,8 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     ctx.drawImage(avatarImg, 0, 0, height, height);
 
     const contentX = height + padding;
-    const contentWidth = width - height - padding*2;
-    const contentHeight = height - padding*2 - metadataHeight;
+    const contentWidth = width - height - padding * 2;
+    const contentHeight = height - padding * 2 - metadataHeight;
 
     // Image overlay (no darkening)
     if (imageUrl) {
@@ -111,7 +111,7 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
             const scale = Math.min(contentWidth / img.width, contentHeight / img.height);
             const w = img.width * scale;
             const h = img.height * scale;
-            ctx.drawImage(img, contentX + (contentWidth - w)/2, padding + (contentHeight - h)/2, w, h);
+            ctx.drawImage(img, contentX + (contentWidth - w) / 2, padding + (contentHeight - h) / 2, w, h);
         } catch {}
     }
 
@@ -120,19 +120,26 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     const { lines, fontSize } = wrapText(ctx, text, contentWidth, contentHeight, 60);
 
     const nonEmptyLines = lines.filter(l => l.trim() !== '');
-    let y = padding + 20; // top padding for visual spacing
+    let totalTextHeight = nonEmptyLines.length * fontSize * 1.2;
+    let yStart = padding + topOffset;
+
+    // Vertical centering tweak for short quotes
+    if (totalTextHeight < contentHeight) {
+        yStart += (contentHeight - totalTextHeight) / 2;
+    }
 
     if (nonEmptyLines.length === 1) {
         ctx.font = `${fontSize + 10}px "NotoSans", "NotoEmoji"`;
         const textWidth = ctx.measureText(nonEmptyLines[0]).width;
         ctx.fillStyle = '#fff';
-        ctx.fillText(nonEmptyLines[0], contentX + (contentWidth - textWidth)/2, height/2);
+        ctx.fillText(nonEmptyLines[0], contentX + (contentWidth - textWidth) / 2, yStart + fontSize);
     } else {
         ctx.fillStyle = '#fff';
+        let y = yStart;
         for (const line of lines) {
             ctx.font = `${fontSize}px "NotoSans", "NotoEmoji"`;
-            ctx.fillText(line, contentX, y);
-            y += fontSize*1.2;
+            ctx.fillText(line, contentX, y + fontSize);
+            y += fontSize * 1.2;
         }
     }
 
@@ -162,15 +169,26 @@ client.on('messageCreate', async (message) => {
     autoReact(message).catch(() => {});
 
     let targetMessage = null;
-    const content = message.content.toLowerCase();
+    const content = message.content.trim();
 
-    if (message.reference && WILDCARD_TRIGGERS.some(t => content.includes(t))) {
+    // False quote: quote @user "text"
+    const falseQuoteMatch = content.match(/^quote\s+<@!?(\d+)>\s+"(.+)"$/i);
+    if (falseQuoteMatch) {
+        const userId = falseQuoteMatch[1];
+        const fakeText = falseQuoteMatch[2];
+        const user = await message.guild.members.fetch(userId);
+        if (!user) return;
+        targetMessage = {
+            author: user.user,
+            content: fakeText
+        };
+    } else if (message.reference && WILDCARD_TRIGGERS.some(t => content.toLowerCase().includes(t))) {
         targetMessage = await message.channel.messages.fetch(message.reference.messageId);
-    } else if (content.startsWith('quote') && message.mentions.users.size) {
+    } else if (content.toLowerCase().startsWith('quote') && message.mentions.users.size) {
         const user = message.mentions.users.first();
         targetMessage = await getTopReactionMessageGlobal(message.guild, user.id);
         if (!targetMessage) return message.reply('No messages found.');
-    } else if (content.startsWith('quote')) {
+    } else if (content.toLowerCase().startsWith('quote')) {
         let cleaned = message.content.replace(/^quote\s*/i, '');
         if (!cleaned.trim()) cleaned = message.content;
         targetMessage = { ...message, content: cleaned };
