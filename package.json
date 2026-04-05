@@ -1,10 +1,11 @@
 {
   "name": "demon-bot",
-  "version": "1.1.0",
-  "description": "Discord quote bot with fake quotes and auto reactions",
+  "version": "1.2.0",
+  "description": "Discord quote bot with fake quotes, image overlay, auto reactions, metadata, and hyperlink buttons",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "deploy": "git add . && git commit -m \"Update bot features\" && git push origin main"
   },
   "dependencies": {
     "canvas": "^3.2.3",
