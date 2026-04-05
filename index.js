@@ -15,7 +15,7 @@ const client = new Client({
     partials: [Partials.Channel, Partials.Message, Partials.Reaction]
 });
 
-// ✅ FULL FONT STACK (fixes metadata + unicode)
+// -------- Fonts
 Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoSans-Regular.ttf'), { family: 'NotoSans' });
 Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoEmoji-Regular.ttf'), { family: 'NotoEmoji' });
 Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoSansSymbols-Regular.ttf'), { family: 'NotoSymbols' });
@@ -24,7 +24,7 @@ Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoSansMath-Regular.ttf'), {
 
 const WILDCARD_TRIGGERS = ['quote', 'ass'];
 
-// ---------------- Helpers
+// -------- Helpers
 function extractURLs(text) {
     return text.match(/https?:\/\/[^\s]+/gi) || [];
 }
@@ -33,7 +33,19 @@ function sanitizeLinks(text) {
     return text.replace(/https?:\/\/[^\s]+/gi, '🌐');
 }
 
-// ---------------- TEXT WRAP
+function getImageFromMessage(msg) {
+    if (msg.attachments.size > 0) {
+        const att = msg.attachments.first();
+        if (att.contentType?.startsWith('image')) return att.url;
+    }
+    if (msg.embeds.length > 0) {
+        const e = msg.embeds[0];
+        if (e.image?.url) return e.image.url;
+    }
+    return null;
+}
+
+// -------- TEXT WRAP
 function wrapText(ctx, text, maxWidth, maxHeight, maxFontSize) {
     let fontSize = maxFontSize;
     let lines = [];
@@ -46,8 +58,6 @@ function wrapText(ctx, text, maxWidth, maxHeight, maxFontSize) {
         let line = '';
 
         for (let word of words) {
-
-            // hyphen break
             if (ctx.measureText(word).width > maxWidth) {
                 let part = '';
                 for (let c of word) {
@@ -80,11 +90,10 @@ function wrapText(ctx, text, maxWidth, maxHeight, maxFontSize) {
     return { lines, fontSize };
 }
 
-// ---------------- IMAGE GENERATION
-async function generateQuoteImage(text, username, avatarURL, serverName, nickname) {
+// -------- IMAGE GENERATION
+async function generateQuoteImage(text, username, avatarURL, serverName, nickname, imageUrl) {
     const width = 1000;
     const height = 400;
-
     const padding = 50;
     const metadataHeight = 80;
 
@@ -103,115 +112,115 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     const contentWidth = width - height - padding * 2;
     const contentHeight = height - padding * 2 - metadataHeight;
 
-    text = `"${sanitizeLinks(text)}"`;
+    // 🖼️ IMAGE MODE (NO TEXT)
+    if (imageUrl) {
+        try {
+            const img = await Canvas.loadImage(imageUrl);
 
-    const { lines, fontSize } = wrapText(ctx, text, contentWidth, contentHeight, 64);
+            const scale = Math.min(
+                contentWidth / img.width,
+                contentHeight / img.height
+            );
 
-    ctx.fillStyle = '#fff';
+            const w = img.width * scale;
+            const h = img.height * scale;
 
-    // 🔥 ONE-LINER CENTER
-    if (lines.length === 1) {
-        let size = fontSize + 14;
-        ctx.font = `${size}px "NotoSans", "NotoEmoji", "NotoSymbols", "NotoSymbols2", "NotoMath"`;
-
-        const textWidth = ctx.measureText(lines[0]).width;
-
-        ctx.fillText(
-            lines[0],
-            contentX + (contentWidth - textWidth) / 2,
-            height / 2 + size / 3
-        );
+            ctx.drawImage(
+                img,
+                contentX + (contentWidth - w) / 2,
+                padding + (contentHeight - h) / 2,
+                w,
+                h
+            );
+        } catch {}
     } else {
-        let totalHeight = lines.length * fontSize * 1.2;
-        let y = padding + (contentHeight - totalHeight) / 2;
+        // TEXT MODE
+        text = `"${sanitizeLinks(text)}"`;
+        const { lines, fontSize } = wrapText(ctx, text, contentWidth, contentHeight, 64);
 
-        for (let line of lines) {
-            ctx.font = `${fontSize}px "NotoSans", "NotoEmoji", "NotoSymbols", "NotoSymbols2", "NotoMath"`;
-            ctx.fillText(line, contentX, y + fontSize);
-            y += fontSize * 1.2;
+        ctx.fillStyle = '#fff';
+
+        if (lines.length === 1) {
+            let size = fontSize + 14;
+            ctx.font = `${size}px "NotoSans", "NotoEmoji", "NotoSymbols", "NotoSymbols2", "NotoMath"`;
+
+            const textWidth = ctx.measureText(lines[0]).width;
+
+            ctx.fillText(
+                lines[0],
+                contentX + (contentWidth - textWidth) / 2,
+                height / 2 + size / 3
+            );
+        } else {
+            let totalHeight = lines.length * fontSize * 1.2;
+            let y = padding + (contentHeight - totalHeight) / 2;
+
+            for (let line of lines) {
+                ctx.font = `${fontSize}px "NotoSans", "NotoEmoji", "NotoSymbols", "NotoSymbols2", "NotoMath"`;
+                ctx.fillText(line, contentX, y + fontSize);
+                y += fontSize * 1.2;
+            }
         }
     }
 
-    // -------- METADATA FIX
+    // -------- METADATA
     ctx.font = `24px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoMath"`;
-
     ctx.fillStyle = '#d580ff';
     ctx.fillText(`- ${serverName}`, contentX, height - 70);
 
     ctx.fillStyle = '#fff';
-
     const displayName = nickname || username;
     ctx.fillText(`${displayName} (@${username})`, contentX, height - 40);
 
     return canvas.toBuffer();
 }
 
-// ---------------- TOP REACT
-async function getTopReactionMessageGlobal(guild, userId) {
-    let top = null, max = 0;
-    const channels = await guild.channels.fetch();
-
-    for (const [, ch] of channels) {
-        if (!ch.isTextBased()) continue;
-
-        try {
-            const msgs = await ch.messages.fetch({ limit: 50 });
-            msgs.forEach(m => {
-                if (m.author.id === userId && m.reactions.cache.size) {
-                    let count = 0;
-                    m.reactions.cache.forEach(r => count += r.count);
-                    if (count > max) {
-                        max = count;
-                        top = m;
-                    }
-                }
-            });
-        } catch {}
-    }
-    return top;
-}
-
-// ---------------- MAIN HANDLER
+// -------- MAIN HANDLER
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
     let target = null;
     const content = message.content.trim().toLowerCase();
 
-    // 🔥 FALSE QUOTE
+    // FALSE QUOTE
     const match = message.content.match(/^quote\s+<@!?(\d+)>\s+"([\s\S]+)"$/i);
     if (match) {
-        const user = await message.guild.members.fetch(match[1]);
-        target = { author: user.user, content: match[2] };
+        try {
+            const user = await message.guild.members.fetch(match[1]);
+            target = { author: user.user, content: match[2] };
+        } catch {
+            return message.reply("Failed, use quotes "like this" to fake quote a user.");
+        }
     }
 
-    // 🔥 REPLY WILDCARD (RESTORED)
+    // REPLY WILDCARD
     else if (message.reference && WILDCARD_TRIGGERS.some(t => content.includes(t))) {
         target = await message.channel.messages.fetch(message.reference.messageId);
     }
 
-    // normal mention quote
+    // MENTION QUOTE
     else if (content.startsWith('quote') && message.mentions.users.size) {
         const user = message.mentions.users.first();
         target = await getTopReactionMessageGlobal(message.guild, user.id);
-        if (!target) return;
+        if (!target) return message.reply("No messages found.");
     }
 
-    // self quote
+    // SELF QUOTE
     else if (content.startsWith('quote')) {
         let txt = message.content.replace(/^quote\s*/i, '');
         target = { ...message, content: txt };
     } else return;
 
-    const text = target.content;
-    const links = extractURLs(text);
+    const image = getImageFromMessage(target);
+    const links = extractURLs(target.content);
 
     const buffer = await generateQuoteImage(
-        text,
+        target.content,
         target.author.username,
         target.author.displayAvatarURL({ format: 'png', size: 256 }),
         message.guild?.name || 'DM',
-        message.guild?.members.cache.get(target.author.id)?.displayName
+        message.guild?.members.cache.get(target.author.id)?.displayName,
+        image
     );
 
     let components = [];
