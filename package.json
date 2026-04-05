@@ -1,7 +1,7 @@
 {
   "name": "demon-bot",
-  "version": "1.0.0",
-  "description": "Your Discord bot",
+  "version": "1.1.0",
+  "description": "Discord quote bot with fake quotes and auto reactions",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
