@@ -15,7 +15,7 @@ const client = new Client({
     partials: [Partials.Channel, Partials.Message, Partials.Reaction]
 });
 
-// -------- Fonts
+// -------- Fonts (UNCHANGED per your request)
 Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoSans-Regular.ttf'), { family: 'NotoSans' });
 Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoEmoji-Regular.ttf'), { family: 'NotoEmoji' });
 Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoSansSymbols-Regular.ttf'), { family: 'NotoSymbols' });
@@ -43,6 +43,36 @@ function getImageFromMessage(msg) {
         if (e.image?.url) return e.image.url;
     }
     return null;
+}
+
+// -------- RESTORED FUNCTION (FIX)
+async function getTopReactionMessageGlobal(guild, userId) {
+    let top = null;
+    let maxReacts = 0;
+
+    const channels = await guild.channels.fetch();
+
+    for (const [, channel] of channels) {
+        if (!channel.isTextBased()) continue;
+
+        try {
+            const messages = await channel.messages.fetch({ limit: 50 });
+
+            messages.forEach(msg => {
+                if (msg.author.id === userId && msg.reactions.cache.size) {
+                    let count = 0;
+                    msg.reactions.cache.forEach(r => count += r.count);
+
+                    if (count > maxReacts) {
+                        maxReacts = count;
+                        top = msg;
+                    }
+                }
+            });
+        } catch {}
+    }
+
+    return top;
 }
 
 // -------- TEXT WRAP
@@ -112,7 +142,7 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     const contentWidth = width - height - padding * 2;
     const contentHeight = height - padding * 2 - metadataHeight;
 
-    // 🖼️ IMAGE MODE (NO TEXT)
+    // IMAGE ONLY MODE
     if (imageUrl) {
         try {
             const img = await Canvas.loadImage(imageUrl);
@@ -134,7 +164,6 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
             );
         } catch {}
     } else {
-        // TEXT MODE
         text = `"${sanitizeLinks(text)}"`;
         const { lines, fontSize } = wrapText(ctx, text, contentWidth, contentHeight, 64);
 
@@ -175,37 +204,34 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     return canvas.toBuffer();
 }
 
-// -------- MAIN HANDLER
+// -------- MAIN
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
     let target = null;
     const content = message.content.trim().toLowerCase();
 
-    // FALSE QUOTE
+    // FALSE QUOTE (FIXED STRING)
     const match = message.content.match(/^quote\s+<@!?(\d+)>\s+"([\s\S]+)"$/i);
     if (match) {
         try {
             const user = await message.guild.members.fetch(match[1]);
             target = { author: user.user, content: match[2] };
         } catch {
-            return message.reply("Failed, use quotes "like this" to fake quote a user.");
+            return message.reply('Failed, use quotes "like this" to fake quote a user.');
         }
     }
 
-    // REPLY WILDCARD
     else if (message.reference && WILDCARD_TRIGGERS.some(t => content.includes(t))) {
         target = await message.channel.messages.fetch(message.reference.messageId);
     }
 
-    // MENTION QUOTE
     else if (content.startsWith('quote') && message.mentions.users.size) {
         const user = message.mentions.users.first();
         target = await getTopReactionMessageGlobal(message.guild, user.id);
         if (!target) return message.reply("No messages found.");
     }
 
-    // SELF QUOTE
     else if (content.startsWith('quote')) {
         let txt = message.content.replace(/^quote\s*/i, '');
         target = { ...message, content: txt };
