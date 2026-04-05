@@ -15,10 +15,16 @@ const client = new Client({
     partials: [Partials.Channel, Partials.Message, Partials.Reaction]
 });
 
-// ✅ USE NON-COLOR EMOJI FONT
+// ✅ FULL FONT STACK (fixes metadata + unicode)
 Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoSans-Regular.ttf'), { family: 'NotoSans' });
 Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoEmoji-Regular.ttf'), { family: 'NotoEmoji' });
+Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoSansSymbols-Regular.ttf'), { family: 'NotoSymbols' });
+Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoSansSymbols2-Regular.ttf'), { family: 'NotoSymbols2' });
+Canvas.registerFont(path.join(__dirname, 'fonts', 'NotoSansMath-Regular.ttf'), { family: 'NotoMath' });
 
+const WILDCARD_TRIGGERS = ['quote', 'ass'];
+
+// ---------------- Helpers
 function extractURLs(text) {
     return text.match(/https?:\/\/[^\s]+/gi) || [];
 }
@@ -27,13 +33,13 @@ function sanitizeLinks(text) {
     return text.replace(/https?:\/\/[^\s]+/gi, '🌐');
 }
 
-// -------- TEXT WRAP (SAFE + HYPHEN)
+// ---------------- TEXT WRAP
 function wrapText(ctx, text, maxWidth, maxHeight, maxFontSize) {
     let fontSize = maxFontSize;
     let lines = [];
 
     while (fontSize > 12) {
-        ctx.font = `${fontSize}px "NotoSans", "NotoEmoji"`;
+        ctx.font = `${fontSize}px "NotoSans", "NotoEmoji", "NotoSymbols", "NotoSymbols2", "NotoMath"`;
         lines = [];
 
         let words = text.split(' ');
@@ -41,16 +47,14 @@ function wrapText(ctx, text, maxWidth, maxHeight, maxFontSize) {
 
         for (let word of words) {
 
-            // 🔥 BREAK MASSIVE WORDS
+            // hyphen break
             if (ctx.measureText(word).width > maxWidth) {
                 let part = '';
                 for (let c of word) {
                     if (ctx.measureText(part + c + '-').width > maxWidth) {
                         lines.push(part + '-');
                         part = c;
-                    } else {
-                        part += c;
-                    }
+                    } else part += c;
                 }
                 line = part + ' ';
                 continue;
@@ -76,9 +80,8 @@ function wrapText(ctx, text, maxWidth, maxHeight, maxFontSize) {
     return { lines, fontSize };
 }
 
-// -------- IMAGE GENERATION
+// ---------------- IMAGE GENERATION
 async function generateQuoteImage(text, username, avatarURL, serverName, nickname) {
-
     const width = 1000;
     const height = 400;
 
@@ -88,11 +91,9 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
     const canvas = Canvas.createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
-    // background
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, width, height);
 
-    // avatar
     const avatar = await Canvas.loadImage(
         await sharp(await (await fetch(avatarURL)).buffer()).png().toBuffer()
     );
@@ -106,14 +107,12 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
 
     const { lines, fontSize } = wrapText(ctx, text, contentWidth, contentHeight, 64);
 
-    const isSingle = lines.length === 1;
-
     ctx.fillStyle = '#fff';
 
-    // 🔥 RESTORE OLD ONE-LINER STYLE
-    if (isSingle) {
-        let size = fontSize + 14; // boost size
-        ctx.font = `${size}px "NotoSans", "NotoEmoji"`;
+    // 🔥 ONE-LINER CENTER
+    if (lines.length === 1) {
+        let size = fontSize + 14;
+        ctx.font = `${size}px "NotoSans", "NotoEmoji", "NotoSymbols", "NotoSymbols2", "NotoMath"`;
 
         const textWidth = ctx.measureText(lines[0]).width;
 
@@ -123,36 +122,33 @@ async function generateQuoteImage(text, username, avatarURL, serverName, nicknam
             height / 2 + size / 3
         );
     } else {
-        // normal multi-line
         let totalHeight = lines.length * fontSize * 1.2;
         let y = padding + (contentHeight - totalHeight) / 2;
 
         for (let line of lines) {
-            ctx.font = `${fontSize}px "NotoSans", "NotoEmoji"`;
+            ctx.font = `${fontSize}px "NotoSans", "NotoEmoji", "NotoSymbols", "NotoSymbols2", "NotoMath"`;
             ctx.fillText(line, contentX, y + fontSize);
             y += fontSize * 1.2;
         }
     }
 
-    // metadata
-    ctx.font = '24px "NotoSans"';
+    // -------- METADATA FIX
+    ctx.font = `24px "NotoSans", "NotoSymbols", "NotoSymbols2", "NotoMath"`;
+
     ctx.fillStyle = '#d580ff';
     ctx.fillText(`- ${serverName}`, contentX, height - 70);
 
     ctx.fillStyle = '#fff';
 
-    // 🔥 BOT NAME FIX
-    const display = nickname || username;
-    ctx.fillText(display, contentX, height - 40);
+    const displayName = nickname || username;
+    ctx.fillText(`${displayName} (@${username})`, contentX, height - 40);
 
     return canvas.toBuffer();
 }
 
-// -------- REACTION SCAN
+// ---------------- TOP REACT
 async function getTopReactionMessageGlobal(guild, userId) {
-    let top = null;
-    let max = 0;
-
+    let top = null, max = 0;
     const channels = await guild.channels.fetch();
 
     for (const [, ch] of channels) {
@@ -160,7 +156,6 @@ async function getTopReactionMessageGlobal(guild, userId) {
 
         try {
             const msgs = await ch.messages.fetch({ limit: 50 });
-
             msgs.forEach(m => {
                 if (m.author.id === userId && m.reactions.cache.size) {
                     let count = 0;
@@ -173,26 +168,25 @@ async function getTopReactionMessageGlobal(guild, userId) {
             });
         } catch {}
     }
-
     return top;
 }
 
-// -------- MAIN HANDLER
+// ---------------- MAIN HANDLER
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
     let target = null;
-    const content = message.content.trim();
+    const content = message.content.trim().toLowerCase();
 
-    // 🔥 FALSE QUOTE FIXED
-    const match = content.match(/^quote\s+<@!?(\d+)>\s+"([\s\S]+)"$/i);
+    // 🔥 FALSE QUOTE
+    const match = message.content.match(/^quote\s+<@!?(\d+)>\s+"([\s\S]+)"$/i);
     if (match) {
         const user = await message.guild.members.fetch(match[1]);
         target = { author: user.user, content: match[2] };
     }
 
-    // reply quote
-    else if (message.reference && content.toLowerCase().includes('quote')) {
+    // 🔥 REPLY WILDCARD (RESTORED)
+    else if (message.reference && WILDCARD_TRIGGERS.some(t => content.includes(t))) {
         target = await message.channel.messages.fetch(message.reference.messageId);
     }
 
@@ -205,7 +199,7 @@ client.on('messageCreate', async (message) => {
 
     // self quote
     else if (content.startsWith('quote')) {
-        let txt = content.replace(/^quote\s*/i, '');
+        let txt = message.content.replace(/^quote\s*/i, '');
         target = { ...message, content: txt };
     } else return;
 
@@ -221,15 +215,11 @@ client.on('messageCreate', async (message) => {
     );
 
     let components = [];
-
     if (links.length) {
         const row = new ActionRowBuilder();
         links.slice(0, 5).forEach(url => {
             row.addComponents(
-                new ButtonBuilder()
-                    .setLabel('🌐')
-                    .setStyle(ButtonStyle.Link)
-                    .setURL(url)
+                new ButtonBuilder().setLabel('🌐').setStyle(ButtonStyle.Link).setURL(url)
             );
         });
         components.push(row);
